@@ -84,6 +84,32 @@ void BiquadFilter_setParams(BiquadFilter *filter, BiquadType type, ALfloat gain,
             a[1] = -2.0f * cos_w0;
             a[2] =  1.0f - alpha;
             break;
+        case BiquadType_BandPassPeak:
+            b[0] =  sin_w0/2.0f;
+            b[1] =  0;
+            b[2] = -sin_w0/2.0f;
+            a[0] =  1.0f + alpha;
+            a[1] = -2.0f * cos_w0;
+            a[2] =  1.0f - alpha;
+            break;
+        case BiquadType_BandPassPeakGain:
+            gain = sqrtf(gain);
+            b[0] =  alpha*gain;
+            b[1] =  0;
+            b[2] = -alpha*gain;
+            a[0] =  1.0f + alpha/gain;
+            a[1] = -2.0f * cos_w0;
+            a[2] =  1.0f - alpha/gain;
+            break;
+        case BiquadType_SplitPeaking:
+            gain = sqrtf(gain);
+            b[0] =  alpha*(gain*gain-1.0f) / gain;
+            b[1] =  0;
+            b[2] = -alpha*(gain*gain-1.0f) / gain;
+            a[0] =  1.0f + alpha / gain;
+            a[1] = -2.0f * cos_w0;
+            a[2] =  1.0f - alpha / gain;
+            break;
     }
 
     filter->a1 = a[1] / a[0];

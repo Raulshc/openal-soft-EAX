@@ -28,6 +28,12 @@ typedef enum BiquadType {
     BiquadType_HighPass,
     /** Band-pass filter, specifying a center frequency. */
     BiquadType_BandPass,
+    /** Band-pass filter, specifying a center frequency. (Q gain) */
+    BiquadType_BandPassPeak,
+    /** Band-pass filter, specifying a center frequency. (Q and G gain) */
+    BiquadType_BandPassPeakGain,
+    /** Band-pass filter, splitted of peaking filter for autowah tests*/
+    BiquadType_SplitPeaking,
 } BiquadType;
 
 typedef struct BiquadFilter {

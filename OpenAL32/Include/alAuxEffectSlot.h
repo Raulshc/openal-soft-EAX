@@ -170,6 +170,7 @@ EffectStateFactory *FlangerStateFactory_getFactory(void);
 EffectStateFactory *FshifterStateFactory_getFactory(void);
 EffectStateFactory *ModulatorStateFactory_getFactory(void);
 EffectStateFactory *PshifterStateFactory_getFactory(void);
+EffectStateFactory *VmorpherStateFactory_getFactory(void);
 
 EffectStateFactory *DedicatedStateFactory_getFactory(void);
 

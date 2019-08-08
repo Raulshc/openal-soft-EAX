@@ -22,6 +22,7 @@ enum {
     FSHIFTER_EFFECT,
     MODULATOR_EFFECT,
     PSHIFTER_EFFECT,
+    VMORPHER_EFFECT,
     DEDICATED_EFFECT,
 
     MAX_EFFECTS
@@ -35,7 +36,7 @@ struct EffectList {
     int type;
     ALenum val;
 };
-#define EFFECTLIST_SIZE 14
+#define EFFECTLIST_SIZE 15
 extern const struct EffectList EffectList[EFFECTLIST_SIZE];
 
 
@@ -72,6 +73,7 @@ extern const struct ALeffectVtable ALfshifter_vtable;
 extern const struct ALeffectVtable ALmodulator_vtable;
 extern const struct ALeffectVtable ALnull_vtable;
 extern const struct ALeffectVtable ALpshifter_vtable;
+extern const struct ALeffectVtable ALvmorpher_vtable;
 extern const struct ALeffectVtable ALdedicated_vtable;
 
 
@@ -172,6 +174,15 @@ typedef union ALeffectProps {
         ALint CoarseTune;
         ALint FineTune;
     } Pshifter;
+
+    struct {
+        ALint PhonemeA;
+        ALint PhonemeACoarse;
+        ALint PhonemeB;
+        ALint PhonemeBCoarse;
+        ALint Waveform;
+        ALfloat Rate;
+    } Vmorpher;
 
     struct {
         ALfloat Gain;

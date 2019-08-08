@@ -57,7 +57,8 @@ static const struct {
     { AL_EFFECT_FLANGER, FlangerStateFactory_getFactory },
     { AL_EFFECT_FREQUENCY_SHIFTER, FshifterStateFactory_getFactory },
     { AL_EFFECT_RING_MODULATOR, ModulatorStateFactory_getFactory },
-    { AL_EFFECT_PITCH_SHIFTER, PshifterStateFactory_getFactory},
+    { AL_EFFECT_PITCH_SHIFTER, PshifterStateFactory_getFactory },
+    { AL_EFFECT_VOCAL_MORPHER, VmorpherStateFactory_getFactory },
     { AL_EFFECT_DEDICATED_DIALOGUE, DedicatedStateFactory_getFactory },
     { AL_EFFECT_DEDICATED_LOW_FREQUENCY_EFFECT, DedicatedStateFactory_getFactory }
 };

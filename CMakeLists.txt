@@ -810,6 +810,7 @@ SET(ALC_OBJS
     Alc/effects/null.c
     Alc/effects/pshifter.c
     Alc/effects/reverb.c
+    Alc/effects/vmorpher.c
     Alc/filters/defs.h
     Alc/filters/filter.c
     Alc/filters/nfc.c

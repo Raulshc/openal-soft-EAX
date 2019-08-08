@@ -48,6 +48,7 @@ const struct EffectList EffectList[EFFECTLIST_SIZE] = {
     { "fshifter",   FSHIFTER_EFFECT,   AL_EFFECT_FREQUENCY_SHIFTER },
     { "modulator",  MODULATOR_EFFECT,  AL_EFFECT_RING_MODULATOR },
     { "pshifter",   PSHIFTER_EFFECT,   AL_EFFECT_PITCH_SHIFTER },
+    { "vmorpher",   VMORPHER_EFFECT,   AL_EFFECT_VOCAL_MORPHER },
     { "dedicated",  DEDICATED_EFFECT,  AL_EFFECT_DEDICATED_LOW_FREQUENCY_EFFECT },
     { "dedicated",  DEDICATED_EFFECT,  AL_EFFECT_DEDICATED_DIALOGUE },
 };
@@ -609,6 +610,15 @@ static void InitEffectParams(ALeffect *effect, ALenum type)
         effect->Props.Pshifter.CoarseTune      = AL_PITCH_SHIFTER_DEFAULT_COARSE_TUNE;
         effect->Props.Pshifter.FineTune        = AL_PITCH_SHIFTER_DEFAULT_FINE_TUNE;
         effect->vtab = &ALpshifter_vtable;
+        break;
+    case AL_EFFECT_VOCAL_MORPHER:
+        effect->Props.Vmorpher.PhonemeA       = AL_VOCAL_MORPHER_DEFAULT_PHONEMEA;
+        effect->Props.Vmorpher.PhonemeACoarse = AL_VOCAL_MORPHER_DEFAULT_PHONEMEA_COARSE_TUNING;
+        effect->Props.Vmorpher.PhonemeB       = AL_VOCAL_MORPHER_DEFAULT_PHONEMEB;
+        effect->Props.Vmorpher.PhonemeBCoarse = AL_VOCAL_MORPHER_DEFAULT_PHONEMEB_COARSE_TUNING;
+        effect->Props.Vmorpher.Waveform       = AL_VOCAL_MORPHER_DEFAULT_WAVEFORM;
+        effect->Props.Vmorpher.Rate           = AL_VOCAL_MORPHER_DEFAULT_RATE;
+        effect->vtab = &ALvmorpher_vtable;
         break;
     case AL_EFFECT_DEDICATED_LOW_FREQUENCY_EFFECT:
     case AL_EFFECT_DEDICATED_DIALOGUE:
