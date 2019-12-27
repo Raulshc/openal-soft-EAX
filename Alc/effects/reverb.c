@@ -54,6 +54,21 @@ ALfloat ReverbBoost = 1.0f;
  */
 #define NUM_LINES 4
 
+ /* This coefficient is used to define the maximum frequency range controlled
+ * by the modulation depth.  The current value of 0.05 will allow it to swing
+ * from 0.95x to 1.05x.  This value must be below 1.  At 1 it will cause the
+ * sampler to stall on the downswing, and above 1 it will cause it to sample
+ * backwards. The value 0.05 seems be nearest to Creative hardware behavior.
+ */
+static const ALfloat MODULATION_DEPTH_COEFF = 0.05f;
+
+/* A filter is used to avoid the terrible distortion caused by changing
+* modulation time and/or depth.  To be consistent across different sample
+* rates, the coefficient must be raised to a constant divided by the sample
+* rate:  coeff^(constant / rate).
+*/
+static const ALfloat MODULATION_FILTER_COEFF = 0.048f;
+static const ALfloat MODULATION_FILTER_CONST = 100000.0f;
 
 /* The B-Format to A-Format conversion matrix. The arrangement of rows is
  * deliberately chosen to align the resulting lines to their spatial opposites
@@ -274,6 +289,21 @@ typedef struct LateReverb {
     ALfloat PanGain[NUM_LINES][MAX_OUTPUT_CHANNELS];
 } LateReverb;
 
+typedef struct Modulation {
+    /* Modulator delay line. */
+    DelayLineI Delay;
+
+    /* The vibrato time is tracked with an index over a modulus-wrapped
+     * range (in samples). */
+    ALuint    Index[NUM_LINES];
+    ALuint    Range[NUM_LINES];
+
+    /* The depth of frequency change (also in samples) and its filter. */
+    ALfloat   Depth[NUM_LINES];
+    ALfloat   Coeff;
+    ALfloat   Filter[NUM_LINES];
+} Modulation;
+
 typedef struct ReverbState {
     DERIVE_FROM_TYPE(ALeffectState);
 
@@ -316,6 +346,8 @@ typedef struct ReverbState {
     EarlyReflections Early;
 
     LateReverb Late;
+
+    Modulation Mod;
 
     /* Indicates the cross-fade point for delay line reads [0,FADE_SAMPLES]. */
     ALsizei FadeCount;
@@ -407,6 +439,18 @@ static void ReverbState_Construct(ReverbState *state)
     state->Late.VecAp.Delay.Mask = 0;
     state->Late.VecAp.Delay.Line = NULL;
     state->Late.VecAp.Coeff = 0.0f;
+
+    state->Mod.Delay.Mask = 0;
+    state->Mod.Delay.Line = NULL;
+    state->Mod.Coeff = 0.0f;
+    for (i = 0; i < NUM_LINES; i++)
+    {
+        state->Mod.Index[i] = 0;
+        state->Mod.Range[i] = 1;
+        state->Mod.Depth[i] = 0.0f;
+        state->Mod.Filter[i] = 0.0f;
+    }
+
     for(i = 0;i < NUM_LINES;i++)
     {
         state->Late.Offset[i][0] = 0;
@@ -540,6 +584,15 @@ static ALboolean AllocLines(const ALuint frequency, ReverbState *State)
     totalSamples += CalcLineLength(length, totalSamples, frequency, 0,
                                    &State->Late.Delay);
 
+    /* The modulator's line length is calculated from the maximum modulation
+    * time and depth coefficient, and halfed for the low-to-high frequency
+    * swing.  An additional sample is added to keep it stable when there is no
+    * modulation.
+    */
+    length = (AL_EAXREVERB_MAX_MODULATION_TIME*MODULATION_DEPTH_COEFF / 2.0f);
+    totalSamples += CalcLineLength(length, totalSamples, frequency, 1,
+                                   &State->Mod.Delay);
+
     if(totalSamples != State->TotalSamples)
     {
         ALfloat *newBuffer;
@@ -559,6 +612,7 @@ static ALboolean AllocLines(const ALuint frequency, ReverbState *State)
     RealizeLineOffset(State->SampleBuffer, &State->Early.Delay);
     RealizeLineOffset(State->SampleBuffer, &State->Late.VecAp.Delay);
     RealizeLineOffset(State->SampleBuffer, &State->Late.Delay);
+    RealizeLineOffset(State->SampleBuffer, &State->Mod.Delay);
 
     /* Clear the sample buffer. */
     for(i = 0;i < State->TotalSamples;i++)
@@ -583,6 +637,9 @@ static ALboolean ReverbState_deviceUpdate(ReverbState *State, ALCdevice *Device)
     State->LateFeedTap = float2int((AL_EAXREVERB_MAX_REFLECTIONS_DELAY +
                                     EARLY_TAP_LENGTHS[NUM_LINES-1]*multiplier) *
                                    frequency);
+
+    State->Mod.Coeff = powf(MODULATION_FILTER_COEFF,
+                            MODULATION_FILTER_CONST / frequency);
 
     /* Clear filters and gain coefficients since the delay lines were all just
      * cleared (if not reallocated).
@@ -861,6 +918,50 @@ static ALvoid UpdateLateLines(const ALfloat density, const ALfloat diffusion, co
     }
 }
 
+/* Update the EAX modulation index, range, and depth.  Keep in mind that this
+ * kind of vibrato is additive and not multiplicative as one may expect.  The
+ * downswing will sound stronger than the upswing. */
+static ALvoid UpdateModulator(ALfloat modTime, ALfloat modDepth, ALuint frequency, ReverbState *State)
+{
+    ALuint range;
+    ALsizei i;
+
+    for (i = 0; i < NUM_LINES; i++)
+    {
+       /* Modulation is calculated in two parts.
+        *
+        * The modulation time effects the sinus applied to the change in
+        * frequency.  An index out of the current time range (both in samples)
+        * is incremented each sample.  The range is bound to a reasonable
+        * minimum (1 sample) and when the timing changes, the index is rescaled
+        * to the new range (to keep the sinus consistent).
+        */
+        range = maxu((ALuint)fastf2i(modTime*frequency), 1);
+        State->Mod.Index[i] = (ALuint)(State->Mod.Index[i] * (ALuint64)range /
+                                    State->Mod.Range[i]);
+        State->Mod.Range[i] = range;
+
+       /* The modulation depth effects the amount of frequency change over the
+        * range of the sinus.  It needs to be scaled by the modulation time so
+        * that a given depth produces a consistent change in frequency over all
+        * ranges of time.  Since the depth is applied to a sinus value, it needs
+        * to be halfed once for the sinus range and again for the sinus swing
+        * in time (half of it is spent decreasing the frequency, half is spent
+        * increasing it).
+        */
+        State->Mod.Depth[i] = modDepth * MODULATION_DEPTH_COEFF * modTime / 2.0f /
+                                2.0f * frequency;
+
+       /* To cancel the effects of a long period modulation on the reverberation,
+        * the amount of pitch should be varied (decreased) according to the
+        * modulation time.  The natural form is varying inversely, in fact 
+        * resulting in an invariant over the previous expression. 
+        */
+        State->Mod.Depth[i] *= clampf(AL_EAXREVERB_DEFAULT_MODULATION_TIME / modTime,
+                                      0.0f, 1.0f);
+    }
+}
+
 /* Creates a transform matrix given a reverb vector. The vector pans the reverb
  * reflections toward the given direction, using its magnitude (up to 1) as a
  * focal strength. This function results in a B-Format transformation matrix
@@ -1007,6 +1108,10 @@ static void ReverbState_update(ReverbState *State, const ALCcontext *Context, co
         frequency, &State->Late
     );
 
+    /* Update the modulator line. */
+    UpdateModulator(props->Reverb.ModulationTime, props->Reverb.ModulationDepth,
+                    frequency, State);
+
     /* Update early and late 3D panning. */
     gain = props->Reverb.Gain * Slot->Params.Gain * ReverbBoost;
     Update3DPanning(Device, props->Reverb.ReflectionsPan, props->Reverb.LateReverbPan,
@@ -1074,6 +1179,44 @@ static inline void DelayLineIn(const DelayLineI *Delay, ALsizei offset, const AL
     ALsizei i;
     for(i = 0;i < count;i++)
         Delay->Line[(offset++)&Delay->Mask][c] = *(in++);
+}
+
+/* Given an input sample, this function produces modulation for the late
+   reverb. */
+static ALfloat CalcModulation(ReverbState *State, ALuint offset, ALfloat sample, ALsizei c)
+{
+    ALfloat sinus, frac, fdelay;
+    ALfloat out0, out1;
+    ALfloat in = sample;
+    ALuint delay;
+
+    /* Calculate the sinus rythm (dependent on modulation time and the
+     * sampling rate).  The center of the sinus is moved to reduce the delay
+     * of the effect when the time or depth are low. */
+    sinus = 1.0f - cosf(F_TAU * State->Mod.Index[c] / State->Mod.Range[c]);
+
+    /* Step the modulation index forward, keeping it bound to its range. */
+    State->Mod.Index[c] = (State->Mod.Index[c] + 1) % State->Mod.Range[c];
+
+    /* The depth determines the range over which to read the input samples
+     * from, so it must be filtered to reduce the distortion caused by even
+     * small parameter changes. */
+    State->Mod.Filter[c] = lerp(State->Mod.Filter[c], State->Mod.Depth[c],
+                             State->Mod.Coeff);
+
+    /* Calculate the read offset and fraction between it and the next sample. */
+    frac = modff(State->Mod.Filter[c] * sinus + 1.0f, &fdelay);
+    delay = (ALuint)fastf2i(fdelay);
+
+    /* Get the two samples crossed by the offset, and feed the delay line
+     * with the next input sample. */
+    out0 = DelayLineOut(&State->Mod.Delay, offset - delay, c);
+    out1 = DelayLineOut(&State->Mod.Delay, offset - delay - 1, c);
+    DelayLineIn(&State->Mod.Delay, offset, c, &in, 1);
+
+    /* The output is obtained by linearly interpolating the two samples that
+     * were acquired above. */
+    return lerp(out0, out1, frac);
 }
 
 /* Applies a scattering matrix to the 4-line (vector) input.  This is used
@@ -1399,7 +1542,8 @@ static void LateReverb_Unfaded(ReverbState *State, ALsizei offset, const ALsizei
         const ALfloat densityGain = State->Late.DensityGain[0] * midGain;
         for(i = 0;i < todo;i++)
             temps[j][i] = DelayLineOut(&main_delay, late_delay_tap++, j)*densityGain +
-                          DelayLineOut(&late_delay, late_feedb_tap++, j)*midGain;
+                          CalcModulation(State, offset + i,
+                              DelayLineOut(&late_delay, late_feedb_tap++, j)*midGain, j);
         LateT60Filter(temps[j], todo, &State->Late.T60[j]);
     }
 
@@ -1451,8 +1595,8 @@ static void LateReverb_Faded(ReverbState *State, ALsizei offset, const ALsizei t
             temps[j][i] =
                 FadedDelayLineOut(&main_delay, late_delay_tap0++, late_delay_tap1++, j,
                     fade0, fade1) +
-                FadedDelayLineOut(&late_delay, late_feedb_tap0++, late_feedb_tap1++, j,
-                    gfade0, gfade1);
+                CalcModulation(State, offset + i, FadedDelayLineOut(&late_delay, 
+                    late_feedb_tap0++, late_feedb_tap1++, j, gfade0, gfade1), j);
             fadeCount += 1.0f;
         }
         LateT60Filter(temps[j], todo, &State->Late.T60[j]);
