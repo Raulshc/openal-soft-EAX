@@ -43,9 +43,9 @@ typedef struct ALfshifterState {
 
     /* Effect parameters */
     ALsizei  count;
-    ALsizei  PhaseStep;
-    ALsizei  Phase;
-    ALdouble ld_sign;
+    ALsizei  PhaseStep[2];
+    ALsizei  Phase[2];
+    ALdouble ld_sign[2];
 
     /*Effects buffers*/ 
     ALfloat   InFIFO[HIL_SIZE];
@@ -57,8 +57,10 @@ typedef struct ALfshifterState {
     alignas(16) ALfloat BufferOut[BUFFERSIZE];
 
     /* Effect gains for each output channel */
-    ALfloat CurrentGains[MAX_OUTPUT_CHANNELS];
-    ALfloat TargetGains[MAX_OUTPUT_CHANNELS];
+    struct {
+        ALfloat Current[MAX_OUTPUT_CHANNELS];
+        ALfloat Target[MAX_OUTPUT_CHANNELS];
+    } Gains[2];
 } ALfshifterState;
 
 static ALvoid ALfshifterState_Destruct(ALfshifterState *state);
@@ -102,18 +104,17 @@ static ALvoid ALfshifterState_Destruct(ALfshifterState *state)
 static ALboolean ALfshifterState_deviceUpdate(ALfshifterState *state, ALCdevice *UNUSED(device))
 {
     /* (Re-)initializing parameters and clear the buffers. */
-    state->count     = FIFO_LATENCY;
-    state->PhaseStep = 0;
-    state->Phase     = 0;
-    state->ld_sign   = 1.0;
+    state->count      = FIFO_LATENCY;
+    state->ld_sign[0] = 1.0;
+    state->ld_sign[1] = 1.0;
 
+    memset(state->PhaseStep,   0, sizeof(state->PhaseStep));
+    memset(state->Phase,       0, sizeof(state->Phase));
     memset(state->InFIFO,      0, sizeof(state->InFIFO));
     memset(state->OutFIFO,     0, sizeof(state->OutFIFO));
     memset(state->OutputAccum, 0, sizeof(state->OutputAccum));
     memset(state->Analytic,    0, sizeof(state->Analytic));
-
-    memset(state->CurrentGains, 0, sizeof(state->CurrentGains));
-    memset(state->TargetGains,  0, sizeof(state->TargetGains));
+    memset(state->Gains,       0, sizeof(state->Gains));
 
     return AL_TRUE;
 }
@@ -125,33 +126,52 @@ static ALvoid ALfshifterState_update(ALfshifterState *state, const ALCcontext *c
     ALfloat step;
 
     step = props->Fshifter.Frequency / (ALfloat)device->Frequency;
-    state->PhaseStep = fastf2i(minf(step, 0.5f) * FRACTIONONE);
+    state->PhaseStep[0] = state->PhaseStep[1] = fastf2i(minf(step, 0.5f) * FRACTIONONE);
 
     switch(props->Fshifter.LeftDirection)
     {
         case AL_FREQUENCY_SHIFTER_DIRECTION_DOWN:
-            state->ld_sign = -1.0;
+            state->ld_sign[0] = -1.0;
             break;
 
         case AL_FREQUENCY_SHIFTER_DIRECTION_UP:
-            state->ld_sign = 1.0;
+            state->ld_sign[0] = 1.0;
             break;
 
         case AL_FREQUENCY_SHIFTER_DIRECTION_OFF:
-            state->Phase = 0;
-            state->PhaseStep = 0;
+            state->Phase[0] = 0;
+            state->PhaseStep[0] = 0;
             break;
     }
 
-    CalcAngleCoeffs(0.0f, 0.0f, 0.0f, coeffs);
-    ComputePanGains(&device->Dry, coeffs, slot->Params.Gain, state->TargetGains);
+    switch(props->Fshifter.RightDirection)
+    {
+        case AL_FREQUENCY_SHIFTER_DIRECTION_DOWN:
+            state->ld_sign[1] = -1.0;
+            break;
+
+        case AL_FREQUENCY_SHIFTER_DIRECTION_UP:
+            state->ld_sign[1] = 1.0;
+            break;
+
+        case AL_FREQUENCY_SHIFTER_DIRECTION_OFF:
+            state->Phase[1] = 0;
+            state->PhaseStep[1] = 0;
+            break;
+    }
+
+    CalcAngleCoeffs(-F_PI_2, 0.0f, 0.0f, coeffs);
+    ComputePanGains(&device->Dry, coeffs, slot->Params.Gain, state->Gains[0].Target);
+
+    CalcAngleCoeffs(F_PI_2, 0.0f, 0.0f, coeffs);
+    ComputePanGains(&device->Dry, coeffs, slot->Params.Gain, state->Gains[1].Target);
 }
 
 static ALvoid ALfshifterState_process(ALfshifterState *state, ALsizei SamplesToDo, const ALfloat (*restrict SamplesIn)[BUFFERSIZE], ALfloat (*restrict SamplesOut)[BUFFERSIZE], ALsizei NumChannels)
 {
     static const ALcomplex complex_zero = { 0.0, 0.0 };
     ALfloat *restrict BufferOut = state->BufferOut;
-    ALsizei j, k, base;
+    ALsizei c, j, k, base;
 
     for(base = 0;base < SamplesToDo;)
     {
@@ -200,19 +220,22 @@ static ALvoid ALfshifterState_process(ALfshifterState *state, ALsizei SamplesToD
     }
 
     /* Process frequency shifter using the analytic signal obtained. */
-    for(k = 0;k < SamplesToDo;k++)
+    for(c=0; c < 2; c++)
     {
-        ALdouble phase = state->Phase * ((1.0/FRACTIONONE) * 2.0*M_PI);
-        BufferOut[k] = (ALfloat)(state->Outdata[k].Real*cos(phase) +
-                                 state->Outdata[k].Imag*sin(phase)*state->ld_sign);
+        for(k = 0;k < SamplesToDo;k++)
+        {
+            ALdouble phase = state->Phase[c] * ((1.0/FRACTIONONE) * 2.0*M_PI);
+            BufferOut[k] = (ALfloat)(state->Outdata[k].Real*cos(phase) +
+                                     state->Outdata[k].Imag*sin(phase)*state->ld_sign[c]);
 
-        state->Phase += state->PhaseStep;
-        state->Phase &= FRACTIONMASK;
+            state->Phase[c] += state->PhaseStep[c];
+            state->Phase[c] &= FRACTIONMASK;
+        }
+
+        /* Now, mix the processed sound data to the output. */
+        MixSamples(BufferOut, NumChannels, SamplesOut, state->Gains[c].Current,
+                   state->Gains[c].Target, maxi(SamplesToDo, 512), 0, SamplesToDo);
     }
-
-    /* Now, mix the processed sound data to the output. */
-    MixSamples(BufferOut, NumChannels, SamplesOut, state->CurrentGains, state->TargetGains,
-               maxi(SamplesToDo, 512), 0, SamplesToDo);
 }
 
 typedef struct FshifterStateFactory {
