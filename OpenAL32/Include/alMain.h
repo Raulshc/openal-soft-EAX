@@ -366,6 +366,37 @@ inline float fast_roundf(float f)
 #endif
 }
 
+/* Converts double-to-int using standard behavior (truncation). */
+static inline ALint double2int(ALdouble d)
+{
+#if ((defined(__GNUC__) || defined(__clang__)) && (defined(__i386__) || defined(__x86_64__)) && \
+     !defined(__SSE2_MATH__)) || (defined(_MSC_VER) && defined(_M_IX86_FP) && _M_IX86_FP < 2)
+    ALint sign, shift;
+    ALint64 mant;
+    union {
+        ALdouble d;
+        ALint64 i64;
+    } conv;
+
+    conv.d = d;
+    sign = (conv.i64>>63) | 1;
+    shift = ((conv.i64>>52)&0x7ff) - (1023+52);
+
+    /* Over/underflow */
+    if(UNLIKELY(shift >= 63 || shift < -52))
+        return 0;
+
+    mant = (conv.i64&I64(0xfffffffffffff)) | I64(0x10000000000000);
+    if(LIKELY(shift < 0))
+        return (ALint)(mant >> -shift) * sign;
+    return (ALint)(mant << shift) * sign;
+
+#else
+
+    return (ALint)d;
+#endif
+}
+
 
 enum DevProbe {
     ALL_DEVICE_PROBE,
