@@ -1391,9 +1391,17 @@ static ALboolean GetSourceiv(ALsource *Source, ALCcontext *Context, SourceProp p
             return AL_TRUE;
 
         case AL_BUFFER:
-            BufferList = (Source->SourceType == AL_STATIC) ? Source->queue : NULL;
-            *values = (BufferList && BufferList->num_buffers >= 1 && BufferList->buffers[0]) ?
-                      BufferList->buffers[0]->id : 0;
+            {
+                const ALbufferlistitem *Current = NULL;
+                ALvoice *voice;
+
+                if ((voice = GetSourceVoice(Source, Context)) != NULL)
+                    Current = ATOMIC_LOAD(&voice->current_buffer, almemory_order_relaxed);
+
+                BufferList = (Source->SourceType == AL_STATIC) ? Source->queue : Current;
+                *values = (BufferList && BufferList->num_buffers >= 1 && BufferList->buffers[0]) ?
+                    BufferList->buffers[0]->id : 0;
+            }
             return AL_TRUE;
 
         case AL_SOURCE_STATE:
