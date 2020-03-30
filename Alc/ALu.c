@@ -1385,10 +1385,16 @@ static void CalcAttnSourceParams(ALvoice *voice, const struct ALvoiceProps *prop
                               Listener->Params.MetersPerUnit;
         if(props->AirAbsorptionFactor > 0.0f)
         {
-            ALfloat hfattn = powf(AIRABSORBGAINHF, meters_base * props->AirAbsorptionFactor);
-            DryGainHF *= hfattn;
+            DryGainHF *= powf(AIRABSORBGAINHF, meters_base * props->AirAbsorptionFactor);
             for(i = 0;i < NumSends;i++)
-                WetGainHF[i] *= hfattn;
+            {
+                if(SendSlots[i])
+                {
+                    ALfloat AirAbsGainHF = SendSlots[i]->Params.AirAbsorptionGainHF;
+                    if (AirAbsGainHF < 1.0f)
+                        WetGainHF[i] *= powf(AirAbsGainHF, meters_base * props->AirAbsorptionFactor);
+                }
+            }
         }
 
         if(props->WetGainAuto)
