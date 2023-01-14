@@ -171,7 +171,7 @@ const Phoneme Phoneme_list[30] ={
 typedef struct ALvmorpherState {
     DERIVE_FROM_TYPE(ALeffectState);
 
-    void (*GetSamples)(ALfloat*, ALsizei, const ALsizei, ALsizei);
+    void (*GetSamples)(ALfloat *restrict, ALsizei, const ALsizei, ALsizei);
 
     ALsizei index;
     ALsizei step;
