@@ -210,6 +210,7 @@ struct ALvoiceProps {
     ALfloat   OuterGainHF;
 
     ALfloat AirAbsorptionFactor;
+    ALfloat AirAbsorptionGainHF;
     ALfloat RoomRolloffFactor;
     ALfloat DopplerFactor;
 
@@ -333,6 +334,8 @@ typedef void (*HrtfDirectMixerFunc)(ALfloat *restrict LeftOut, ALfloat *restrict
 
 #define SPEEDOFSOUNDMETRESPERSEC  (343.3f)
 #define AIRABSORBGAINHF           (0.99426f) /* -0.05dB */
+#define AIRABSORBGAINHFMIN        (0.892f)   /* -1.0dB  */
+#define AIRABSORBGAINHFMAX        (1.0f)     /*  0.0dB  */
 
 /* Target gain for the reverb decay feedback reaching the decay time. */
 #define REVERB_DECAY_GAIN  (0.001f) /* -60 dB */

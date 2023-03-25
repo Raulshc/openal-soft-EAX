@@ -53,6 +53,7 @@
 
 #include "backends/base.h"
 
+#include "eaxmain.h"
 
 /************************************************
  * Backends
@@ -297,6 +298,11 @@ static const struct {
     DECL(alEventCallbackSOFT),
     DECL(alGetPointerSOFT),
     DECL(alGetPointervSOFT),
+
+    DECL(EAXSet),
+    DECL(EAXGet),
+    DECL(EAXSetBufferMode),
+    DECL(EAXGetBufferMode),
 };
 #undef DECL
 
@@ -686,6 +692,12 @@ static const struct {
     DECL(AL_EVENT_TYPE_ERROR_SOFT),
     DECL(AL_EVENT_TYPE_PERFORMANCE_SOFT),
     DECL(AL_EVENT_TYPE_DEPRECATED_SOFT),
+
+    DECL(AL_EAX_RAM_SIZE),
+    DECL(AL_EAX_RAM_FREE),
+    DECL(AL_STORAGE_AUTOMATIC),
+    DECL(AL_STORAGE_HARDWARE),
+    DECL(AL_STORAGE_ACCESSIBLE),
 };
 #undef DECL
 
@@ -741,7 +753,13 @@ static const ALchar alExtList[] =
     "AL_SOFT_source_latency "
     "AL_SOFT_source_length "
     "AL_SOFT_source_resampler "
-    "AL_SOFT_source_spatialize";
+    "AL_SOFT_source_spatialize "
+    "EAX "
+    "EAX2.0 "
+    "EAX3.0 "
+    "EAX4.0 "
+    "EAX5.0 "
+    "EAX-RAM";
 
 static ATOMIC(ALCenum) LastNullDeviceError = ATOMIC_INIT_STATIC(ALC_NO_ERROR);
 
@@ -1849,6 +1867,9 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             new_sends = mini(numSends, clampi(new_sends, 0, MAX_SENDS));
         else
             new_sends = numSends;
+
+        if(device->EAXIsActive)
+            new_sends = maxi(device->EAXSession.ulMaxActiveSends, new_sends);
     }
     else if(attrList && attrList[0])
     {
@@ -1960,6 +1981,9 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             new_sends = mini(numSends, clampi(new_sends, 0, MAX_SENDS));
         else
             new_sends = numSends;
+
+        if(device->EAXIsActive)
+            new_sends = maxi(device->EAXSession.ulMaxActiveSends, new_sends);
     }
 
     if((device->Flags&DEVICE_RUNNING))
@@ -2304,6 +2328,8 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
                         source->Send[s].LFReference = HIGHPASSFREQREF;
                     }
                 }
+                for(i=0; i<EAX_MAX_FXSLOTS; i++)
+                    source->EAXSendProps[i].guidReceivingFXSlotID = device->EAXManager.TargetSlots[i];
 
                 ATOMIC_FLAG_CLEAR(&source->PropsClean, almemory_order_release);
             }
@@ -2417,6 +2443,38 @@ static void InitDevice(ALCdevice *device, enum DeviceType type)
     device->Stablizer = NULL;
     device->Limiter = NULL;
 
+    InitGUIDArrayEAX();
+    device->EAXIsActive = AL_FALSE;
+    device->EAXSession.ulEAXVersion = EAX_40;
+    device->EAXSession.ulMaxActiveSends = EAXCONTEXT_DEFAULTMAXACTIVESENDS;
+    device->EAXManager.Target = EAX20_TARGET;
+    device->EAXManager.TargetSlots = &id_list[_EAXPROPERTYID_EAX40_FXSlot0];
+
+    device->EAXhw.PrimaryIdx = SLOT_NULL;
+    device->EAXhw.MultiSlot = AL_FALSE;
+    device->EAXhw.Filters.Direct.Idx = AL_FILTER_NULL;
+    device->EAXhw.Filters.Direct.Gain = AL_LOWPASS_DEFAULT_GAIN;
+    device->EAXhw.Filters.Direct.GainHF = AL_LOWPASS_DEFAULT_GAINHF;
+
+    for(i = 0;i < EAX_MAX_FXSLOTS;i++)
+    {
+        device->EAXhw.Slots[i].Idx = AL_EFFECTSLOT_NULL;
+        device->EAXhw.Slots[i].EffIdx = AL_EFFECT_NULL;
+        device->EAXhw.Slots[i].EffType = _EAX_NULL_GUID;
+        device->EAXhw.Filters.Send[i].Idx = AL_FILTER_NULL;
+        device->EAXhw.Filters.Send[i].Gain = AL_LOWPASS_DEFAULT_GAIN;
+        device->EAXhw.Filters.Send[i].GainHF = AL_LOWPASS_DEFAULT_GAINHF;
+
+        device->EAXSlotProps[i].guidLoadEffect = EAX_NULL_GUID;
+        device->EAXSlotProps[i].lVolume = EAXFXSLOT_DEFAULTVOLUME;
+        device->EAXSlotProps[i].lLock = EAXFXSLOT_UNLOCKED;
+        device->EAXSlotProps[i].ulFlags = EAXFXSLOT_DEFAULTFLAGS;//Review, the flags are for EAX5, default EAX4
+        device->EAXSlotProps[i].lOcclusion = EAXFXSLOT_DEFAULTOCCLUSION;
+        device->EAXSlotProps[i].flOcclusionLFRatio = EAXFXSLOT_DEFAULTOCCLUSIONLFRATIO;
+
+        memset(&device->EAXEffectProps[i].EAXReverb, 0, sizeof(EAXREVERBPROPERTIES));
+    }
+
     VECTOR_INIT(device->BufferList);
     almtx_init(&device->BufferLock, almtx_plain);
 
@@ -2510,6 +2568,16 @@ static ALCvoid FreeDevice(ALCdevice *device)
     device->FOAOut.NumChannels = 0;
     device->RealOut.Buffer = NULL;
     device->RealOut.NumChannels = 0;
+
+    for(i = 0;i < EAX_MAX_FXSLOTS;i++)
+    {
+        device->EAXSlotProps[i].flOcclusionLFRatio = 0.0f;
+        device->EAXSlotProps[i].guidLoadEffect = EAX_NULL_GUID;
+        device->EAXSlotProps[i].lLock = 0;
+        device->EAXSlotProps[i].lOcclusion = 0;
+        device->EAXSlotProps[i].lVolume = 0;
+        device->EAXSlotProps[i].ulFlags = 0x0;
+    }
 
     al_free(device);
 }
@@ -2645,6 +2713,14 @@ static ALvoid InitContext(ALCcontext *Context)
     listener->Params.SourceDistanceModel = Context->SourceDistanceModel;
     listener->Params.DistanceModel = Context->DistanceModel;
 
+    Context->EAXCxtProps.guidPrimaryFXSlotID = EAXCONTEXT_DEFAULTPRIMARYFXSLOTID;
+    Context->EAXCxtProps.flDistanceFactor    = EAXCONTEXT_DEFAULTDISTANCEFACTOR;
+    Context->EAXCxtProps.flAirAbsorptionHF   = EAXCONTEXT_DEFAULTAIRABSORPTIONHF;
+    Context->EAXCxtProps.flHFReference       = EAXCONTEXT_DEFAULTHFREFERENCE;
+    Context->EAXCxtProps.flMacroFXFactor     = EAXCONTEXT_DEFAULTMACROFXFACTOR;
+
+    ATOMIC_INIT(&Context->EAXLastError, EAX_OK);
+    Context->EAXIsDefer = AL_FALSE;
 
     Context->AsyncEvents = ll_ringbuffer_create(63, sizeof(AsyncEvent), false);
     if(althrd_create(&Context->EventThread, EventThread, Context) != althrd_success)

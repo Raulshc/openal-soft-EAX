@@ -7,6 +7,8 @@
 #include "hrtf.h"
 #include "atomic.h"
 
+#include "eax_defs.h"
+
 #define MAX_SENDS      16
 #define DEFAULT_SENDS  2
 
@@ -55,6 +57,7 @@ typedef struct ALsource {
     ALfloat   OuterGainHF;
 
     ALfloat AirAbsorptionFactor;
+    ALfloat AirAbsorptionGainHF;
     ALfloat RoomRolloffFactor;
     ALfloat DopplerFactor;
 
@@ -82,6 +85,13 @@ typedef struct ALsource {
         ALfloat LFReference;
     } *Send;
 
+    EAXSOURCEPROPERTIES         EAXSrcProps;
+    EAXSOURCEALLSENDPROPERTIES  EAXSendProps[EAX_MAX_FXSLOTS];
+    EAXSPEAKERLEVELPROPERTIES   EAXSpeakersLevel;
+    EAXACTIVEFXSLOTS            EAXActiveSlots;
+
+    EAXSOURCEDATA               EAXSrcData;
+    ALuint                      SourceChannels;
     /**
      * Last user-specified offset, and the offset type (bytes, samples, or
      * seconds).
@@ -110,6 +120,11 @@ typedef struct ALsource {
 } ALsource;
 
 void UpdateAllSourceProps(ALCcontext *context);
+ALenum CalcFilterGainsEAX(ALCcontext *context, ALsource *source);
+ALenum ApplyFilterGainsEAX(ALCcontext *context);
+void UpdateAllSourcesEAX(ALCcontext *context);
+void UpdateSourceEAX(ALCcontext *Context, ALsource *Source);
+
 
 ALvoid ReleaseALSources(ALCcontext *Context);
 

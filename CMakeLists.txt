@@ -838,6 +838,12 @@ SET(ALC_OBJS
     Alc/mixvoice.c
     Alc/mixer/defs.h
     Alc/mixer/mixer_c.c
+    Alc/eax_defs.h
+    Alc/eaxcommon.h
+    Alc/eaxmain.h
+    Alc/eaxmain.c
+    Alc/eaxeffects.c
+    Alc/eaxeffects.h
 )
 
 

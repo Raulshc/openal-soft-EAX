@@ -45,7 +45,7 @@
  * low frequencies.
  */
 
-static const float B[4][3] = {
+static const float _B[4][3] = {
     {    0.0f                             },
     {    1.0f                             },
     {    3.0f,     3.0f                   },
@@ -63,7 +63,7 @@ static void NfcFilterCreate1(struct NfcFilter1 *nfc, const float w0, const float
 
     /* Calculate bass-boost coefficients. */
     r = 0.5f * w0;
-    b_00 = B[1][0] * r;
+    b_00 = _B[1][0] * r;
     g_0 = 1.0f + b_00;
 
     nfc->gain *= g_0;
@@ -71,7 +71,7 @@ static void NfcFilterCreate1(struct NfcFilter1 *nfc, const float w0, const float
 
     /* Calculate bass-cut coefficients. */
     r = 0.5f * w1;
-    b_00 = B[1][0] * r;
+    b_00 = _B[1][0] * r;
     g_0 = 1.0f + b_00;
 
     nfc->base_gain /= g_0;
@@ -85,7 +85,7 @@ static void NfcFilterAdjust1(struct NfcFilter1 *nfc, const float w0)
     float r;
 
     r = 0.5f * w0;
-    b_00 = B[1][0] * r;
+    b_00 = _B[1][0] * r;
     g_0 = 1.0f + b_00;
 
     nfc->gain = nfc->base_gain * g_0;
@@ -103,8 +103,8 @@ static void NfcFilterCreate2(struct NfcFilter2 *nfc, const float w0, const float
 
     /* Calculate bass-boost coefficients. */
     r = 0.5f * w0;
-    b_10 = B[2][0] * r;
-    b_11 = B[2][1] * r * r;
+    b_10 = _B[2][0] * r;
+    b_11 = _B[2][1] * r * r;
     g_1 = 1.0f + b_10 + b_11;
 
     nfc->gain *= g_1;
@@ -113,8 +113,8 @@ static void NfcFilterCreate2(struct NfcFilter2 *nfc, const float w0, const float
 
     /* Calculate bass-cut coefficients. */
     r = 0.5f * w1;
-    b_10 = B[2][0] * r;
-    b_11 = B[2][1] * r * r;
+    b_10 = _B[2][0] * r;
+    b_11 = _B[2][1] * r * r;
     g_1 = 1.0f + b_10 + b_11;
 
     nfc->base_gain /= g_1;
@@ -129,8 +129,8 @@ static void NfcFilterAdjust2(struct NfcFilter2 *nfc, const float w0)
     float r;
 
     r = 0.5f * w0;
-    b_10 = B[2][0] * r;
-    b_11 = B[2][1] * r * r;
+    b_10 = _B[2][0] * r;
+    b_11 = _B[2][1] * r * r;
     g_1 = 1.0f + b_10 + b_11;
 
     nfc->gain = nfc->base_gain * g_1;
@@ -150,15 +150,15 @@ static void NfcFilterCreate3(struct NfcFilter3 *nfc, const float w0, const float
 
     /* Calculate bass-boost coefficients. */
     r = 0.5f * w0;
-    b_10 = B[3][0] * r;
-    b_11 = B[3][1] * r * r;
+    b_10 = _B[3][0] * r;
+    b_11 = _B[3][1] * r * r;
     g_1 = 1.0f + b_10 + b_11;
 
     nfc->gain *= g_1;
     nfc->b1 = (2.0f*b_10 + 4.0f*b_11) / g_1;
     nfc->b2 = 4.0f * b_11 / g_1;
 
-    b_00 = B[3][2] * r;
+    b_00 = _B[3][2] * r;
     g_0 = 1.0f + b_00;
 
     nfc->gain *= g_0;
@@ -166,8 +166,8 @@ static void NfcFilterCreate3(struct NfcFilter3 *nfc, const float w0, const float
 
     /* Calculate bass-cut coefficients. */
     r = 0.5f * w1;
-    b_10 = B[3][0] * r;
-    b_11 = B[3][1] * r * r;
+    b_10 = _B[3][0] * r;
+    b_11 = _B[3][1] * r * r;
     g_1 = 1.0f + b_10 + b_11;
 
     nfc->base_gain /= g_1;
@@ -175,7 +175,7 @@ static void NfcFilterCreate3(struct NfcFilter3 *nfc, const float w0, const float
     nfc->a1 = (2.0f*b_10 + 4.0f*b_11) / g_1;
     nfc->a2 = 4.0f * b_11 / g_1;
 
-    b_00 = B[3][2] * r;
+    b_00 = _B[3][2] * r;
     g_0 = 1.0f + b_00;
 
     nfc->base_gain /= g_0;
@@ -190,15 +190,15 @@ static void NfcFilterAdjust3(struct NfcFilter3 *nfc, const float w0)
     float r;
 
     r = 0.5f * w0;
-    b_10 = B[3][0] * r;
-    b_11 = B[3][1] * r * r;
+    b_10 = _B[3][0] * r;
+    b_11 = _B[3][1] * r * r;
     g_1 = 1.0f + b_10 + b_11;
 
     nfc->gain = nfc->base_gain * g_1;
     nfc->b1 = (2.0f*b_10 + 4.0f*b_11) / g_1;
     nfc->b2 = 4.0f * b_11 / g_1;
 
-    b_00 = B[3][2] * r;
+    b_00 = _B[3][2] * r;
     g_0 = 1.0f + b_00;
 
     nfc->gain *= g_0;

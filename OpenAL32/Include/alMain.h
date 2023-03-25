@@ -31,6 +31,8 @@
 #include "almalloc.h"
 #include "threads.h"
 
+#include "eax_defs.h"
+#include "eaxcommon.h"
 
 #if defined(_WIN64)
 #define SZFMT "%I64u"
@@ -756,6 +758,14 @@ struct ALCdevice_struct {
     struct ALCbackend *Backend;
 
     ATOMIC(ALCdevice*) next;
+
+    ALboolean            EAXIsActive;
+    EAXHW                EAXhw;
+    EAXMANAGER           EAXManager;
+    EAXEFFECTPROPS       EAXEffectProps[EAX_MAX_FXSLOTS];
+    EAXFXSLOTPROPERTIES  EAXSlotProps[EAX_MAX_FXSLOTS];
+    EAXSESSIONPROPERTIES EAXSession;
+    //SpeakerConfig ??
 };
 
 // Frequency was requested by the app or config file
@@ -880,6 +890,10 @@ struct ALCcontext_struct {
     const ALCchar *ExtensionList;
 
     ATOMIC(ALCcontext*) next;
+
+    EAXCONTEXTPROPERTIES EAXCxtProps;
+    ATOMIC(ALenum)       EAXLastError;
+    ALboolean            EAXIsDefer;
 
     /* Memory space used by the listener (and possibly default effect slot) */
     alignas(16) ALCbyte _listener_mem[];

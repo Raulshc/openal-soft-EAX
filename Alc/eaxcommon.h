@@ -1,0 +1,760 @@
+#ifndef EAXCOMMON_H
+#define EAXCOMMON_H
+
+#include <math.h>
+#include <windows.h>  //Redo only for windows targets
+
+#include "AL/al.h"
+#include "AL/alc.h"
+#include "AL/alext.h"
+
+#include "eax_defs.h"
+
+#define UNIMPLEMENTED
+
+#define IDLIST_SIZE           32
+#define LISTENER10LIST_SIZE    5
+#define BUFFER10LIST_SIZE      2
+#define LISTENER20LIST_SIZE   16
+#define BUFFER20LIST_SIZE     15
+#define LISTENER30LIST_SIZE   26
+#define BUFFER30LIST_SIZE     23
+#define CNTXT40LIST_SIZE       7
+#define CNTXT50LIST_SIZE      10
+#define SLOT40LIST_SIZE        6
+#define SLOT50LIST_SIZE        8
+#define SOURCE40LIST_SIZE     28
+#define SOURCE50LIST_SIZE     31
+#define EFFECTSLIST_SIZE      12
+#define REVERBLIST_SIZE       26
+#define AGCLIST_SIZE           3
+#define AUTOWAHLIST_SIZE       6
+#define CHORUSLIST_SIZE        8
+#define DISTORSIONLIST_SIZE    7
+#define ECHOLIST_SIZE          7
+#define EQUALIZERLIST_SIZE    12
+#define FLANGERLIST_SIZE       8
+#define FSHIFTERLIST_SIZE      5
+#define VMORPHERLIST_SIZE      8
+#define PSHIFTERLIST_SIZE      4
+#define MODULATORLIST_SIZE     5
+#define OBJECTS_SIZE          (IDLIST_SIZE - EFFECTSLIST_SIZE)
+#define MIN_SIZE               1
+
+#define MAX_PRESETS           26
+
+#define GUID_STR_BUFFER       40
+#define MAX_STR_BUFFER      1024
+
+#define EAX_MIN_FXSLOTS        1
+
+#define SLOT_NULL             -1
+#define SLOT_0                 0
+#define SLOT_1                 1
+#define SLOT_2                 2
+#define SLOT_3                 3
+
+#define SEND_0                 0
+#define SEND_1                 1
+#define SEND_2                 2
+#define SEND_3                 3
+
+#define MIN_ACTIVE_SENDS       2
+#define MAX_ACTIVE_SENDS       4
+
+#define EAXEFFECTS_DEFERRED      0x80000000 // changes take effect later
+#define MAX_EAXFXSLOT_PARAMETER  0x00000040 // max range reserved for loaded effect parameters
+#define EAXFXSLOT_OFFSET         0x00010000
+
+#define EAX_DEFAULT_GAIN               0.0f
+#define EAX_MAX_GAIN                1000.0f
+#define EAX_MIN_GAIN              -10000.0f
+
+#define EAX_VECTOR_COMPONENT_MIN       0.0f
+#define EAX_VECTOR_COMPONENT_MAX       1.0f
+
+
+#define DEFAULT_EAXACTIVESENDSDATA {{{SLOT_NULL, AL_FALSE, AL_TRUE, AL_TRUE},    \
+                                     {SLOT_0   , AL_TRUE , AL_TRUE, AL_TRUE},    \
+                                     {SLOT_NULL, AL_FALSE, AL_TRUE, AL_TRUE},    \
+                                     {SLOT_NULL, AL_FALSE, AL_TRUE, AL_TRUE}}}
+
+#define EAX_ONBOARD_RAM_SIZE   0x4000000
+#define EAX_ONBOARD_RAM_FREE   0x3E00000
+
+typedef struct _EAXCALLPROPS {
+    const GUID *propertySetID;
+    ALuint      property;
+    ALuint      source;
+    ALvoid     *value;
+    ALuint      size;
+    ALCcontext *context;
+    ALint       slotID;
+    ALuint      guidID;
+    ALboolean   isSet;
+}EAXCALLPROPS;
+
+typedef struct _EAXFILTERS {
+    struct {
+        ALuint  Idx;
+        ALfloat Gain;
+        ALfloat GainHF;
+    }Direct;
+
+    struct {
+        ALuint  Idx;
+        ALfloat Gain;
+        ALfloat GainHF;
+    }Send[EAX_MAX_FXSLOTS];
+}EAXFILTERS;
+
+typedef struct _EAXFILTERGAINS {
+    ALfloat Direct;
+    ALfloat DirectHF;
+    ALfloat Send;
+    ALfloat SendHF;
+}EAXFILTERGAINS;
+
+typedef struct _EAXSLOT {
+    ALuint Idx;
+    ALuint EffIdx;
+    ALenum EffType;
+}EAXSLOT;
+
+typedef struct _EAXHW {
+    EAXSLOT    Slots[EAX_MAX_FXSLOTS];
+    EAXFILTERS Filters;
+    ALint      PrimaryIdx;
+    ALboolean  MultiSlot;
+}EAXHW;
+
+typedef struct _EAXMANAGER {
+    ALenum    Target;
+    LPGUID    TargetSlots;
+}EAXMANAGER;
+
+typedef struct _EAXSOURCEDATA {
+    struct {
+        ALint     SlotIdx;
+        ALboolean Primary;
+        ALboolean Enviroment;
+        ALboolean Upmix;
+    }ActiveSends[EAX_MAX_FXSLOTS];
+}EAXSOURCEDATA;
+
+typedef union _EAXEFFECTPROPS {
+    EAXREVERBPROPERTIES            EAXReverb;
+    EAXAGCCOMPRESSORPROPERTIES     Compressor;
+    EAXAUTOWAHPROPERTIES           Autowah;
+    EAXCHORUSPROPERTIES            Chorus;
+    EAXDISTORTIONPROPERTIES        Distorsion;
+    EAXECHOPROPERTIES              Echo;
+    EAXEQUALIZERPROPERTIES         Equalizer;
+    EAXFLANGERPROPERTIES           Flanger;
+    EAXFREQUENCYSHIFTERPROPERTIES  Fshifter;
+    EAXVOCALMORPHERPROPERTIES      Vmorpher;
+    EAXPITCHSHIFTERPROPERTIES      Pshifter;
+    EAXRINGMODULATORPROPERTIES     Modulator;
+}EAXEFFECTPROPS;
+
+enum {
+    EAXNULL_TARGET = 0,
+    EAX20_TARGET = 3,
+    EAX30_TARGET,
+    EAX40_TARGET,
+    EAX50_TARGET
+};
+
+enum {
+    SOURCE_3D,
+    SOURCE_2D,
+    SOURCE_ALL,
+    SOURCE_NONE
+};
+
+enum {
+    _EAX_NULL_GUID,
+    _EAX_PrimaryFXSlotID,
+    _DSPROPSETID_EAX10_ListenerProperties,
+    _DSPROPSETID_EAX10_BufferProperties,
+    _DSPROPSETID_EAX20_ListenerProperties,
+    _DSPROPSETID_EAX20_BufferProperties,
+    _DSPROPSETID_EAX30_ListenerProperties,
+    _DSPROPSETID_EAX30_BufferProperties,
+    _EAXPROPERTYID_EAX40_Context,
+    _EAXPROPERTYID_EAX50_Context,
+    _EAXPROPERTYID_EAX40_FXSlot0,
+    _EAXPROPERTYID_EAX40_FXSlot1,
+    _EAXPROPERTYID_EAX40_FXSlot2,
+    _EAXPROPERTYID_EAX40_FXSlot3,
+    _EAXPROPERTYID_EAX50_FXSlot0,
+    _EAXPROPERTYID_EAX50_FXSlot1,
+    _EAXPROPERTYID_EAX50_FXSlot2,
+    _EAXPROPERTYID_EAX50_FXSlot3,
+    _EAXPROPERTYID_EAX40_Source,
+    _EAXPROPERTYID_EAX50_Source,
+    _EAX_REVERB_EFFECT,
+    _EAX_AGCCOMPRESSOR_EFFECT,
+    _EAX_AUTOWAH_EFFECT,
+    _EAX_CHORUS_EFFECT,
+    _EAX_DISTORTION_EFFECT,
+    _EAX_ECHO_EFFECT,
+    _EAX_EQUALIZER_EFFECT,
+    _EAX_FLANGER_EFFECT,
+    _EAX_FREQUENCYSHIFTER_EFFECT,
+    _EAX_VOCALMORPHER_EFFECT,
+    _EAX_PITCHSHIFTER_EFFECT,
+    _EAX_RINGMODULATOR_EFFECT
+};
+
+#define MIN_EFFECT _EAX_REVERB_EFFECT
+#define MAX_EFFECT _EAX_RINGMODULATOR_EFFECT
+
+typedef union _LPEAXPROPS {
+    ALvoid                             *value;
+    long                               *pLong;
+    unsigned long                      *pUlong;
+    ALfloat                            *pFloat;
+    EAXVECTOR                          *pVector;
+    LPGUID                              pGUID;
+    LPEAXSESSIONPROPERTIES              pSession;
+    LPEAXCONTEXTPROPERTIES              pContext;
+    LPEAXSOURCEPROPERTIES               pSource;
+    LPEAXSOURCE2DPROPERTIES             pSource2d;
+    LPEAXSOURCEALLSENDPROPERTIES        pSrcallsend;
+    LPEAXSPEAKERLEVELPROPERTIES         pSpkrlevel;
+    LPEAXACTIVEFXSLOTS                  pActiveslots;
+    LPEAXOBSTRUCTIONPROPERTIES          pObstuction;
+    LPEAXOCCLUSIONPROPERTIES            pOcclusion;
+    LPEAXEXCLUSIONPROPERTIES            pExclusion;
+    LPEAXSOURCESENDPROPERTIES           pSrcsend;
+    LPEAXSOURCEOCCLUSIONSENDPROPERTIES  pSrcocclsend;
+    LPEAXSOURCEEXCLUSIONSENDPROPERTIES  pSrcexclsend;
+    LPEAXFXSLOTPROPERTIES               pSlot;
+    LPEAXREVERBPROPERTIES               pReverb;
+    LPEAXAGCCOMPRESSORPROPERTIES        pAgccompr;
+    LPEAXAUTOWAHPROPERTIES              pAutowah;
+    LPEAXCHORUSPROPERTIES               pChorus;
+    LPEAXDISTORTIONPROPERTIES           pDistortion;
+    LPEAXECHOPROPERTIES                 pEcho;
+    LPEAXEQUALIZERPROPERTIES            pEqualizer;
+    LPEAXFLANGERPROPERTIES              pFlanger;
+    LPEAXFREQUENCYSHIFTERPROPERTIES     pFshifter;
+    LPEAXVOCALMORPHERPROPERTIES         pVmorpher;
+    LPEAXPITCHSHIFTERPROPERTIES         pPshifter;
+    LPEAXRINGMODULATORPROPERTIES        pModulator;
+    LPEAXLISTENERPROPERTIES             pListener;
+    LPEAXBUFFERPROPERTIES               pBuffer;
+
+}LPEAXPROPS;
+
+#ifdef INIT_COMMON_DEFS
+
+GUID      id_list[IDLIST_SIZE] = { 0x0 };
+
+ALuint    listener2to3[LISTENER20LIST_SIZE] = {
+    0, 1, 5, 6, 24, 8, 9, 11, 12, 14, 15, 2, 3, 4, 21, 25
+};
+
+ALuint    buffer2to3[BUFFER20LIST_SIZE] = {
+    0, 1, 5, 6, 7, 8, 20, 9, 10, 11, 12, 13, 17, 21, 22
+};
+
+ALchar   *id_str_list[IDLIST_SIZE] = {
+    "EAX_NULL_GUID",
+    "EAX_PrimaryFXSlotID",
+    "DSPROPSETID_EAX10_ListenerProperties",
+    "DSPROPSETID_EAX10_BufferProperties",
+    "DSPROPSETID_EAX20_ListenerProperties",
+    "DSPROPSETID_EAX20_BufferProperties",
+    "DSPROPSETID_EAX30_ListenerProperties",
+    "DSPROPSETID_EAX30_BufferProperties",
+    "EAXPROPERTYID_EAX40_Context",
+    "EAXPROPERTYID_EAX50_Context",
+    "EAXPROPERTYID_EAX40_FXSlot0",
+    "EAXPROPERTYID_EAX40_FXSlot1",
+    "EAXPROPERTYID_EAX40_FXSlot2",
+    "EAXPROPERTYID_EAX40_FXSlot3",
+    "EAXPROPERTYID_EAX50_FXSlot0",
+    "EAXPROPERTYID_EAX50_FXSlot1",
+    "EAXPROPERTYID_EAX50_FXSlot2",
+    "EAXPROPERTYID_EAX50_FXSlot3",
+    "EAXPROPERTYID_EAX40_Source",
+    "EAXPROPERTYID_EAX50_Source",
+    "EAX_REVERB_EFFECT",
+    "EAX_AGCCOMPRESSOR_EFFECT",
+    "EAX_AUTOWAH_EFFECT",
+    "EAX_CHORUS_EFFECT",
+    "EAX_DISTORTION_EFFECT",
+    "EAX_ECHO_EFFECT",
+    "EAX_EQUALIZER_EFFECT",
+    "EAX_FLANGER_EFFECT",
+    "EAX_FREQUENCYSHIFTER_EFFECT",
+    "EAX_VOCALMORPHER_EFFECT",
+    "EAX_PITCHSHIFTER_EFFECT",
+    "EAX_RINGMODULATOR_EFFECT"
+};
+
+ALchar   *listener10_str_list[] = {
+    "DSPROPERTY_EAX10LISTENER_ALL",
+    "DSPROPERTY_EAX10LISTENER_ENVIRONMENT",
+    "DSPROPERTY_EAX10LISTENER_VOLUME",
+    "DSPROPERTY_EAX10LISTENER_DECAYTIME",
+    "DSPROPERTY_EAX10LISTENER_DAMPING"
+};
+
+ALchar   *buffer10_str_list[] = {
+    "DSPROPERTY_EAX10BUFFER_ALL",
+    "DSPROPERTY_EAX10BUFFER_REVERBMIX"
+};
+
+ALchar   *listener20_str_list[] = {
+    "DSPROPERTY_EAX20LISTENER_NONE",
+    "DSPROPERTY_EAX20LISTENER_ALLPARAMETERS",
+    "DSPROPERTY_EAX20LISTENER_ROOM",
+    "DSPROPERTY_EAX20LISTENER_ROOMHF",
+    "DSPROPERTY_EAX20LISTENER_ROOMROLLOFFFACTOR",
+    "DSPROPERTY_EAX20LISTENER_DECAYTIME",
+    "DSPROPERTY_EAX20LISTENER_DECAYHFRATIO",
+    "DSPROPERTY_EAX20LISTENER_REFLECTIONS",
+    "DSPROPERTY_EAX20LISTENER_REFLECTIONSDELAY",
+    "DSPROPERTY_EAX20LISTENER_REVERB",
+    "DSPROPERTY_EAX20LISTENER_REVERBDELAY",
+    "DSPROPERTY_EAX20LISTENER_ENVIRONMENT",
+    "DSPROPERTY_EAX20LISTENER_ENVIRONMENTSIZE",
+    "DSPROPERTY_EAX20LISTENER_ENVIRONMENTDIFFUSION",
+    "DSPROPERTY_EAX20LISTENER_AIRABSORPTIONHF",
+    "DSPROPERTY_EAX20LISTENER_FLAGS"
+};
+
+ALchar   *buffer20_str_list[] = {
+    "DSPROPERTY_EAX20BUFFER_NONE",
+    "DSPROPERTY_EAX20BUFFER_ALLPARAMETERS",
+    "DSPROPERTY_EAX20BUFFER_DIRECT",
+    "DSPROPERTY_EAX20BUFFER_DIRECTHF",
+    "DSPROPERTY_EAX20BUFFER_ROOM",
+    "DSPROPERTY_EAX20BUFFER_ROOMHF",
+    "DSPROPERTY_EAX20BUFFER_ROOMROLLOFFFACTOR",
+    "DSPROPERTY_EAX20BUFFER_OBSTRUCTION",
+    "DSPROPERTY_EAX20BUFFER_OBSTRUCTIONLFRATIO",
+    "DSPROPERTY_EAX20BUFFER_OCCLUSION",
+    "DSPROPERTY_EAX20BUFFER_OCCLUSIONLFRATIO",
+    "DSPROPERTY_EAX20BUFFER_OCCLUSIONROOMRATIO",
+    "DSPROPERTY_EAX20BUFFER_OUTSIDEVOLUMEHF",
+    "DSPROPERTY_EAX20BUFFER_AIRABSORPTIONFACTOR",
+    "DSPROPERTY_EAX20BUFFER_FLAGS"
+};
+
+ALchar   *listener30_str_list[] = {
+    "DSPROPERTY_EAXLISTENER_NONE",
+    "DSPROPERTY_EAXLISTENER_ALLPARAMETERS",
+    "DSPROPERTY_EAXLISTENER_ENVIRONMENT",
+    "DSPROPERTY_EAXLISTENER_ENVIRONMENTSIZE",
+    "DSPROPERTY_EAXLISTENER_ENVIRONMENTDIFFUSION",
+    "DSPROPERTY_EAXLISTENER_ROOM",
+    "DSPROPERTY_EAXLISTENER_ROOMHF",
+    "DSPROPERTY_EAXLISTENER_ROOMLF",
+    "DSPROPERTY_EAXLISTENER_DECAYTIME",
+    "DSPROPERTY_EAXLISTENER_DECAYHFRATIO",
+    "DSPROPERTY_EAXLISTENER_DECAYLFRATIO",
+    "DSPROPERTY_EAXLISTENER_REFLECTIONS",
+    "DSPROPERTY_EAXLISTENER_REFLECTIONSDELAY",
+    "DSPROPERTY_EAXLISTENER_REFLECTIONSPAN",
+    "DSPROPERTY_EAXLISTENER_REVERB",
+    "DSPROPERTY_EAXLISTENER_REVERBDELAY",
+    "DSPROPERTY_EAXLISTENER_REVERBPAN",
+    "DSPROPERTY_EAXLISTENER_ECHOTIME",
+    "DSPROPERTY_EAXLISTENER_ECHODEPTH",
+    "DSPROPERTY_EAXLISTENER_MODULATIONTIME",
+    "DSPROPERTY_EAXLISTENER_MODULATIONDEPTH",
+    "DSPROPERTY_EAXLISTENER_AIRABSORPTIONHF",
+    "DSPROPERTY_EAXLISTENER_HFREFERENCE",
+    "DSPROPERTY_EAXLISTENER_LFREFERENCE",
+    "DSPROPERTY_EAXLISTENER_ROOMROLLOFFFACTOR",
+    "DSPROPERTY_EAXLISTENER_FLAGS"
+};
+
+ALchar   *buffer30_str_list[] = {
+    "DSPROPERTY_EAXBUFFER_NONE",
+    "DSPROPERTY_EAXBUFFER_ALLPARAMETERS",
+    "DSPROPERTY_EAXBUFFER_OBSTRUCTIONPARAMETERS",
+    "DSPROPERTY_EAXBUFFER_OCCLUSIONPARAMETERS",
+    "DSPROPERTY_EAXBUFFER_EXCLUSIONPARAMETERS",
+    "DSPROPERTY_EAXBUFFER_DIRECT",
+    "DSPROPERTY_EAXBUFFER_DIRECTHF",
+    "DSPROPERTY_EAXBUFFER_ROOM",
+    "DSPROPERTY_EAXBUFFER_ROOMHF",
+    "DSPROPERTY_EAXBUFFER_OBSTRUCTION",
+    "DSPROPERTY_EAXBUFFER_OBSTRUCTIONLFRATIO",
+    "DSPROPERTY_EAXBUFFER_OCCLUSION",
+    "DSPROPERTY_EAXBUFFER_OCCLUSIONLFRATIO",
+    "DSPROPERTY_EAXBUFFER_OCCLUSIONROOMRATIO",
+    "DSPROPERTY_EAXBUFFER_OCCLUSIONDIRECTRATIO",
+    "DSPROPERTY_EAXBUFFER_EXCLUSION",
+    "DSPROPERTY_EAXBUFFER_EXCLUSIONLFRATIO",
+    "DSPROPERTY_EAXBUFFER_OUTSIDEVOLUMEHF",
+    "DSPROPERTY_EAXBUFFER_DOPPLERFACTOR",
+    "DSPROPERTY_EAXBUFFER_ROLLOFFFACTOR",
+    "DSPROPERTY_EAXBUFFER_ROOMROLLOFFFACTOR",
+    "DSPROPERTY_EAXBUFFER_AIRABSORPTIONFACTOR",
+    "DSPROPERTY_EAXBUFFER_FLAGS"
+};
+
+ALchar   *cntxt_str_list[] = {
+    "EAXCONTEXT_NONE",
+    "EAXCONTEXT_ALLPARAMETERS",
+    "EAXCONTEXT_PRIMARYFXSLOTID",
+    "EAXCONTEXT_DISTANCEFACTOR",
+    "EAXCONTEXT_AIRABSORPTIONHF",
+    "EAXCONTEXT_HFREFERENCE",
+    "EAXCONTEXT_LASTERROR",
+    "EAXCONTEXT_SPEAKERCONFIG",
+    "EAXCONTEXT_EAXSESSION",
+    "EAXCONTEXT_MACROFXFACTOR"
+};
+
+ALchar   *slot_str_list[] = {
+    //"EAXFXSLOT_PARAMETER",/*0-0x40 for effect params*/
+    "EAXFXSLOT_NONE",/*0x10000*/
+    "EAXFXSLOT_ALLPARAMETERS",
+    "EAXFXSLOT_LOADEFFECT",
+    "EAXFXSLOT_VOLUME",
+    "EAXFXSLOT_LOCK",
+    "EAXFXSLOT_FLAGS",
+    "EAXFXSLOT_OCCLUSION",
+    "EAXFXSLOT_OCCLUSIONLFRATIO"
+};
+
+ALchar   *source_str_list[] = {
+    "EAXSOURCE_NONE",
+    "EAXSOURCE_ALLPARAMETERS",
+    "EAXSOURCE_OBSTRUCTIONPARAMETERS",
+    "EAXSOURCE_OCCLUSIONPARAMETERS",
+    "EAXSOURCE_EXCLUSIONPARAMETERS",
+    "EAXSOURCE_DIRECT",
+    "EAXSOURCE_DIRECTHF",
+    "EAXSOURCE_ROOM",
+    "EAXSOURCE_ROOMHF",
+    "EAXSOURCE_OBSTRUCTION",
+    "EAXSOURCE_OBSTRUCTIONLFRATIO",
+    "EAXSOURCE_OCCLUSION",
+    "EAXSOURCE_OCCLUSIONLFRATIO",
+    "EAXSOURCE_OCCLUSIONROOMRATIO",
+    "EAXSOURCE_OCCLUSIONDIRECTRATIO",
+    "EAXSOURCE_EXCLUSION",
+    "EAXSOURCE_EXCLUSIONLFRATIO",
+    "EAXSOURCE_OUTSIDEVOLUMEHF",
+    "EAXSOURCE_DOPPLERFACTOR",
+    "EAXSOURCE_ROLLOFFFACTOR",
+    "EAXSOURCE_ROOMROLLOFFFACTOR",
+    "EAXSOURCE_AIRABSORPTIONFACTOR",
+    "EAXSOURCE_FLAGS",
+    "EAXSOURCE_SENDPARAMETERS",
+    "EAXSOURCE_ALLSENDPARAMETERS",
+    "EAXSOURCE_OCCLUSIONSENDPARAMETERS",
+    "EAXSOURCE_EXCLUSIONSENDPARAMETERS",
+    "EAXSOURCE_ACTIVEFXSLOTID",
+    "EAXSOURCE_MACROFXFACTOR",
+    "EAXSOURCE_SPEAKERLEVELS",
+    "EAXSOURCE_ALL2DPARAMETERS"
+};
+
+ALchar   *reverb_str_list[] = {
+    "EAXREVERB_NONE",
+    "EAXREVERB_ALLPARAMETERS",
+    "EAXREVERB_ENVIRONMENT",
+    "EAXREVERB_ENVIRONMENTSIZE",
+    "EAXREVERB_ENVIRONMENTDIFFUSION",
+    "EAXREVERB_ROOM",
+    "EAXREVERB_ROOMHF",
+    "EAXREVERB_ROOMLF",
+    "EAXREVERB_DECAYTIME",
+    "EAXREVERB_DECAYHFRATIO",
+    "EAXREVERB_DECAYLFRATIO",
+    "EAXREVERB_REFLECTIONS",
+    "EAXREVERB_REFLECTIONSDELAY",
+    "EAXREVERB_REFLECTIONSPAN",
+    "EAXREVERB_REVERB",
+    "EAXREVERB_REVERBDELAY",
+    "EAXREVERB_REVERBPAN",
+    "EAXREVERB_ECHOTIME",
+    "EAXREVERB_ECHODEPTH",
+    "EAXREVERB_MODULATIONTIME",
+    "EAXREVERB_MODULATIONDEPTH",
+    "EAXREVERB_AIRABSORPTIONHF",
+    "EAXREVERB_HFREFERENCE",
+    "EAXREVERB_LFREFERENCE",
+    "EAXREVERB_ROOMROLLOFFFACTOR",
+    "EAXREVERB_FLAGS"
+};
+
+ALchar   *agc_str_list[] = {
+    "EAXAGCCOMPRESSOR_NONE",
+    "EAXAGCCOMPRESSOR_ALLPARAMETERS",
+    "EAXAGCCOMPRESSOR_ONOFF"
+};
+
+ALchar   *autowah_str_list[] = {
+    "EAXAUTOWAH_NONE",
+    "EAXAUTOWAH_ALLPARAMETERS",
+    "EAXAUTOWAH_ATTACKTIME",
+    "EAXAUTOWAH_RELEASETIME",
+    "EAXAUTOWAH_RESONANCE",
+    "EAXAUTOWAH_PEAKLEVEL"
+};
+
+ALchar   *chorus_str_list[] = {
+    "EAXCHORUS_NONE",
+    "EAXCHORUS_ALLPARAMETERS",
+    "EAXCHORUS_WAVEFORM",
+    "EAXCHORUS_PHASE",
+    "EAXCHORUS_RATE",
+    "EAXCHORUS_DEPTH",
+    "EAXCHORUS_FEEDBACK",
+    "EAXCHORUS_DELAY"
+};
+
+ALchar   *distorsion_str_list[] = {
+    "EAXDISTORTION_NONE",
+    "EAXDISTORTION_ALLPARAMETERS",
+    "EAXDISTORTION_EDGE",
+    "EAXDISTORTION_GAIN",
+    "EAXDISTORTION_LOWPASSCUTOFF",
+    "EAXDISTORTION_EQCENTER",
+    "EAXDISTORTION_EQBANDWIDTH"
+};
+
+ALchar   *echo_str_list[] = {
+    "EAXECHO_NONE",
+    "EAXECHO_ALLPARAMETERS",
+    "EAXECHO_DELAY",
+    "EAXECHO_LRDELAY",
+    "EAXECHO_DAMPING",
+    "EAXECHO_FEEDBACK",
+    "EAXECHO_SPREAD"
+};
+
+ALchar   *equalizer_str_list[] = {
+    "EAXEQUALIZER_NONE",
+    "EAXEQUALIZER_ALLPARAMETERS",
+    "EAXEQUALIZER_LOWGAIN",
+    "EAXEQUALIZER_LOWCUTOFF",
+    "EAXEQUALIZER_MID1GAIN",
+    "EAXEQUALIZER_MID1CENTER",
+    "EAXEQUALIZER_MID1WIDTH",
+    "EAXEQUALIZER_MID2GAIN",
+    "EAXEQUALIZER_MID2CENTER",
+    "EAXEQUALIZER_MID2WIDTH",
+    "EAXEQUALIZER_HIGHGAIN",
+    "EAXEQUALIZER_HIGHCUTOFF"
+};
+
+ALchar   *flanger_str_list[] = {
+    "EAXFLANGER_NONE",
+    "EAXFLANGER_ALLPARAMETERS",
+    "EAXFLANGER_WAVEFORM",
+    "EAXFLANGER_PHASE",
+    "EAXFLANGER_RATE",
+    "EAXFLANGER_DEPTH",
+    "EAXFLANGER_FEEDBACK",
+    "EAXFLANGER_DELAY"
+};
+
+ALchar   *fshifter_str_list[] = {
+    "EAXFREQUENCYSHIFTER_NONE",
+    "EAXFREQUENCYSHIFTER_ALLPARAMETERS",
+    "EAXFREQUENCYSHIFTER_FREQUENCY",
+    "EAXFREQUENCYSHIFTER_LEFTDIRECTION",
+    "EAXFREQUENCYSHIFTER_RIGHTDIRECTION"
+};
+
+ALchar   *vmorpher_str_list[] = {
+    "EAXVOCALMORPHER_NONE",
+    "EAXVOCALMORPHER_ALLPARAMETERS",
+    "EAXVOCALMORPHER_PHONEMEA",
+    "EAXVOCALMORPHER_PHONEMEACOARSETUNING",
+    "EAXVOCALMORPHER_PHONEMEB",
+    "EAXVOCALMORPHER_PHONEMEBCOARSETUNING",
+    "EAXVOCALMORPHER_WAVEFORM",
+    "EAXVOCALMORPHER_RATE"
+};
+
+ALchar   *pshifter_str_list[] = {
+    "EAXPITCHSHIFTER_NONE",
+    "EAXPITCHSHIFTER_ALLPARAMETERS",
+    "EAXPITCHSHIFTER_COARSETUNE",
+    "EAXPITCHSHIFTER_FINETUNE"
+};
+
+ALchar   *modulator_str_list[] = {
+    "EAXRINGMODULATOR_NONE",
+    "EAXRINGMODULATOR_ALLPARAMETERS",
+    "EAXRINGMODULATOR_FREQUENCY",
+    "EAXRINGMODULATOR_HIGHPASSCUTOFF",
+    "EAXRINGMODULATOR_WAVEFORM"
+};
+
+ALchar **effect_str_list[EFFECTSLIST_SIZE] = {
+    reverb_str_list,
+    agc_str_list,
+    autowah_str_list,
+    chorus_str_list,
+    distorsion_str_list,
+    echo_str_list,
+    equalizer_str_list,
+    flanger_str_list,
+    fshifter_str_list,
+    vmorpher_str_list,
+    pshifter_str_list,
+    modulator_str_list,
+};
+
+EAXREVERBPROPERTIES reverb_presets[MAX_PRESETS] ={
+    EAX_REVERB_PRESET_GENERIC,
+    EAX_REVERB_PRESET_PADDEDCELL,
+    EAX_REVERB_PRESET_ROOM,
+    EAX_REVERB_PRESET_BATHROOM,
+    EAX_REVERB_PRESET_LIVINGROOM,
+    EAX_REVERB_PRESET_STONEROOM,
+    EAX_REVERB_PRESET_AUDITORIUM,
+    EAX_REVERB_PRESET_CONCERTHALL,
+    EAX_REVERB_PRESET_CAVE,
+    EAX_REVERB_PRESET_ARENA,
+    EAX_REVERB_PRESET_HANGAR,
+    EAX_REVERB_PRESET_CARPETTEDHALLWAY,
+    EAX_REVERB_PRESET_HALLWAY,
+    EAX_REVERB_PRESET_STONECORRIDOR,
+    EAX_REVERB_PRESET_ALLEY,
+    EAX_REVERB_PRESET_FOREST,
+    EAX_REVERB_PRESET_CITY,
+    EAX_REVERB_PRESET_MOUNTAINS,
+    EAX_REVERB_PRESET_QUARRY,
+    EAX_REVERB_PRESET_PLAIN,
+    EAX_REVERB_PRESET_PARKINGLOT,
+    EAX_REVERB_PRESET_SEWERPIPE,
+    EAX_REVERB_PRESET_UNDERWATER,
+    EAX_REVERB_PRESET_DRUGGED,
+    EAX_REVERB_PRESET_DIZZY,
+    EAX_REVERB_PRESET_PSYCHOTIC
+};
+
+EAXREVERBPROPERTIES           defReverbProps     = EAX_REVERB_PRESET_GENERIC;
+EAXAUTOWAHPROPERTIES          defAutowahProps    = EAX_AUTOWAH_DEFAULT_PRESET;
+EAXCHORUSPROPERTIES           defChorusProps     = EAX_CHORUS_DEFAULT_PRESET;
+EAXAGCCOMPRESSORPROPERTIES    defCompressorProps = EAX_AGCCOMPRESSOR_DEFAULT_PRESET;
+EAXDISTORTIONPROPERTIES       defDistortionProps = EAX_DISTORTION_DEFAULT_PRESET;
+EAXECHOPROPERTIES             defEchoProps       = EAX_ECHO_DEFAULT_PRESET;
+EAXEQUALIZERPROPERTIES        defEqualizerProps  = EAX_EQUALIZER_DEFAULT_PRESET;
+EAXFLANGERPROPERTIES          defFlangerProps    = EAX_FLANGER_DEFAULT_PRESET;
+EAXFREQUENCYSHIFTERPROPERTIES defFshifterProps   = EAX_FREQUENCYSHIFTER_DEFAULT_PRESET;
+EAXVOCALMORPHERPROPERTIES     defVmorpherProps   = EAX_VOCAL_MORPHER_DEFAULT_PRESET;
+EAXPITCHSHIFTERPROPERTIES     defPshifterProps   = EAX_PITCHSHIFTER_DEFAULT_PRESET;
+EAXRINGMODULATORPROPERTIES    defModulatorProps  = EAX_RINGMODULATOR_DEFAULT_PRESET;
+
+#else
+
+extern GUID       id_list[IDLIST_SIZE];
+extern ALuint     listener2to3[LISTENER20LIST_SIZE];
+extern ALuint     buffer2to3[BUFFER20LIST_SIZE];
+extern ALchar    *id_str_list[IDLIST_SIZE];
+extern ALchar    *listener10_str_list[];
+extern ALchar    *buffer10_str_list[];
+extern ALchar    *listener20_str_list[];
+extern ALchar    *buffer20_str_list[];
+extern ALchar    *listener30_str_list[];
+extern ALchar    *buffer30_str_list[];
+extern ALchar    *cntxt_str_list[];
+extern ALchar    *slot_str_list[];
+extern ALchar    *source_str_list[];
+extern ALchar    *reverb_str_list[];
+extern ALchar    *agc_str_list[];
+extern ALchar    *autowah_str_list[];
+extern ALchar    *chorus_str_list[];
+extern ALchar    *distorsion_str_list[];
+extern ALchar    *echo_str_list[];
+extern ALchar    *equalizer_str_list[];
+extern ALchar    *flanger_str_list[];
+extern ALchar    *fshifter_str_list[];
+extern ALchar    *vmorpher_str_list[];
+extern ALchar    *pshifter_str_list[];
+extern ALchar    *modulator_str_list[];
+extern ALchar   **effect_str_list[EFFECTSLIST_SIZE];
+
+extern EAXREVERBPROPERTIES           reverb_presets[MAX_PRESETS];
+extern EAXREVERBPROPERTIES           defReverbProps;
+extern EAXAUTOWAHPROPERTIES          defAutowahProps;
+extern EAXCHORUSPROPERTIES           defChorusProps;
+extern EAXAGCCOMPRESSORPROPERTIES    defCompressorProps;
+extern EAXDISTORTIONPROPERTIES       defDistortionProps;
+extern EAXECHOPROPERTIES             defEchoProps;
+extern EAXEQUALIZERPROPERTIES        defEqualizerProps;
+extern EAXFLANGERPROPERTIES          defFlangerProps;
+extern EAXFREQUENCYSHIFTERPROPERTIES defFshifterProps;
+extern EAXVOCALMORPHERPROPERTIES     defVmorpherProps;
+extern EAXPITCHSHIFTERPROPERTIES     defPshifterProps;
+extern EAXRINGMODULATORPROPERTIES    defModulatorProps;
+
+#endif /*INIT_COMMON_DEFS*/
+
+/* guid2str Function. Convert GUID to string. */
+inline ALvoid guid2str(ALchar *str, const GUID *guid)
+{
+    snprintf(str, GUID_STR_BUFFER,
+                "{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}",
+                guid->Data1, guid->Data2, guid->Data3, guid->Data4[0], guid->Data4[1],
+                guid->Data4[2], guid->Data4[3], guid->Data4[4], guid->Data4[5],
+                guid->Data4[6], guid->Data4[7]);
+}
+
+/* InitArrayPropSetID function. Initialize the array of property IDs (GUIDs)
+used by the main functions EAXSet, EAXGet and EAXInfo.*/
+inline ALvoid InitGUIDArrayEAX(void)
+{
+    id_list[0]  = EAX_NULL_GUID;
+    id_list[1]  = EAX_PrimaryFXSlotID;
+    id_list[2]  = DSPROPSETID_EAX10_ListenerProperties;
+    id_list[3]  = DSPROPSETID_EAX10_BufferProperties;
+    id_list[4]  = DSPROPSETID_EAX20_ListenerProperties;
+    id_list[5]  = DSPROPSETID_EAX20_BufferProperties;
+    id_list[6]  = DSPROPSETID_EAX30_ListenerProperties;
+    id_list[7]  = DSPROPSETID_EAX30_BufferProperties;
+    id_list[8]  = EAXPROPERTYID_EAX40_Context;
+    id_list[9]  = EAXPROPERTYID_EAX50_Context;
+    id_list[10] = EAXPROPERTYID_EAX40_FXSlot0;
+    id_list[11] = EAXPROPERTYID_EAX40_FXSlot1; 
+    id_list[12] = EAXPROPERTYID_EAX40_FXSlot2;
+    id_list[13] = EAXPROPERTYID_EAX40_FXSlot3; 
+    id_list[14] = EAXPROPERTYID_EAX50_FXSlot0;
+    id_list[15] = EAXPROPERTYID_EAX50_FXSlot1;
+    id_list[16] = EAXPROPERTYID_EAX50_FXSlot2;
+    id_list[17] = EAXPROPERTYID_EAX50_FXSlot3;
+    id_list[18] = EAXPROPERTYID_EAX40_Source;
+    id_list[19] = EAXPROPERTYID_EAX50_Source;
+    id_list[20] = EAX_REVERB_EFFECT;
+    id_list[21] = EAX_AGCCOMPRESSOR_EFFECT;
+    id_list[22] = EAX_AUTOWAH_EFFECT;
+    id_list[23] = EAX_CHORUS_EFFECT;
+    id_list[24] = EAX_DISTORTION_EFFECT;
+    id_list[25] = EAX_ECHO_EFFECT;
+    id_list[26] = EAX_EQUALIZER_EFFECT;
+    id_list[27] = EAX_FLANGER_EFFECT;
+    id_list[28] = EAX_FREQUENCYSHIFTER_EFFECT;
+    id_list[29] = EAX_VOCALMORPHER_EFFECT;
+    id_list[30] = EAX_PITCHSHIFTER_EFFECT;
+    id_list[31] = EAX_RINGMODULATOR_EFFECT;
+}
+
+/* gain_to_mB function. Convert gain to its milliBell equivalent */
+inline LONG gain_to_mB(ALfloat gain)
+{
+    return (gain > 1E-05f) ? (LONG)(2000.0f * log10f(gain)) : -10000L;
+}
+
+/* mB_to_gain function. Convert milliBell to its gain equivalent */
+inline ALfloat mB_to_gain(ALfloat millibels)
+{
+    return (millibels > -10000.0f) ? powf(10.0f, millibels / 2000.0f) : 0.0f;
+}
+
+
+#endif /* EAXCOMMON_H */

@@ -43,7 +43,7 @@
 
 static ALsource *AllocSource(ALCcontext *context);
 static void FreeSource(ALCcontext *context, ALsource *source);
-static void InitSourceParams(ALsource *Source, ALsizei num_sends);
+static void InitSourceParams(ALsource *Source, ALsizei num_sends, LPGUID list);
 static void DeinitSource(ALsource *source, ALsizei num_sends);
 static void UpdateSourceProps(ALsource *source, ALvoice *voice, ALsizei num_sends, ALCcontext *context);
 static ALint64 GetSourceSampleOffset(ALsource *Source, ALCcontext *context, ALuint64 *clocktime);
@@ -51,6 +51,7 @@ static ALdouble GetSourceSecOffset(ALsource *Source, ALCcontext *context, ALuint
 static ALdouble GetSourceOffset(ALsource *Source, ALenum name, ALCcontext *context);
 static ALboolean GetSampleOffset(ALsource *Source, ALuint *offset, ALsizei *frac);
 static ALboolean ApplyOffset(ALsource *Source, ALvoice *voice);
+static ALboolean GenSourceSendPrimaryEAX(ALCcontext *Context, ALsource *Source);
 
 static inline void LockSourceList(ALCcontext *context)
 { almtx_lock(&context->SourceLock); }
@@ -522,6 +523,13 @@ static ALint Int64ValsByProp(ALenum prop)
         ATOMIC_FLAG_CLEAR(&Source->PropsClean, almemory_order_release);       \
 } while(0)
 
+#define DO_UPDATE_EAXPROPS() do {                                             \
+    Context->EAXIsDefer = AL_FALSE;                                           \
+    CalcFilterGainsEAX(Context, Source);                                      \
+    ApplyFilterGainsEAX(Context);                                             \
+    UpdateSourceEAX(Context, Source);                                         \
+} while(0)
+
 static ALboolean SetSourcefv(ALsource *Source, ALCcontext *Context, SourceProp prop, const ALfloat *values)
 {
     ALCdevice *device = Context->Device;
@@ -560,49 +568,70 @@ static ALboolean SetSourcefv(ALsource *Source, ALCcontext *Context, SourceProp p
             CHECKVAL(*values >= 0.0f);
 
             Source->Gain = *values;
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_MAX_DISTANCE:
             CHECKVAL(*values >= 0.0f);
 
             Source->MaxDistance = *values;
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_ROLLOFF_FACTOR:
             CHECKVAL(*values >= 0.0f);
 
             Source->RolloffFactor = *values;
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_REFERENCE_DISTANCE:
             CHECKVAL(*values >= 0.0f);
 
             Source->RefDistance = *values;
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_MIN_GAIN:
             CHECKVAL(*values >= 0.0f);
 
             Source->MinGain = *values;
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_MAX_GAIN:
             CHECKVAL(*values >= 0.0f);
 
             Source->MaxGain = *values;
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_CONE_OUTER_GAIN:
             CHECKVAL(*values >= 0.0f && *values <= 1.0f);
 
             Source->OuterGain = *values;
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_CONE_OUTER_GAINHF:
@@ -684,7 +713,10 @@ static ALboolean SetSourcefv(ALsource *Source, ALCcontext *Context, SourceProp p
             Source->Position[0] = values[0];
             Source->Position[1] = values[1];
             Source->Position[2] = values[2];
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_VELOCITY:
@@ -693,7 +725,10 @@ static ALboolean SetSourcefv(ALsource *Source, ALCcontext *Context, SourceProp p
             Source->Velocity[0] = values[0];
             Source->Velocity[1] = values[1];
             Source->Velocity[2] = values[2];
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_DIRECTION:
@@ -702,7 +737,10 @@ static ALboolean SetSourcefv(ALsource *Source, ALCcontext *Context, SourceProp p
             Source->Direction[0] = values[0];
             Source->Direction[1] = values[1];
             Source->Direction[2] = values[2];
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_ORIENTATION:
@@ -758,6 +796,7 @@ static ALboolean SetSourceiv(ALsource *Source, ALCcontext *Context, SourceProp p
     ALeffectslot *slot = NULL;
     ALbufferlistitem *oldlist;
     ALfloat fvals[6];
+    ALuint oldchannels;
 
     switch(prop)
     {
@@ -773,7 +812,10 @@ static ALboolean SetSourceiv(ALsource *Source, ALCcontext *Context, SourceProp p
             CHECKVAL(*values == AL_FALSE || *values == AL_TRUE);
 
             Source->HeadRelative = (ALboolean)*values;
-            DO_UPDATEPROPS();
+            if (device->EAXIsActive && Context->EAXIsDefer)
+                DO_UPDATE_EAXPROPS();
+            else
+                DO_UPDATEPROPS();
             return AL_TRUE;
 
         case AL_LOOPING:
@@ -842,12 +884,32 @@ static ALboolean SetSourceiv(ALsource *Source, ALCcontext *Context, SourceProp p
                 /* Source is now Static */
                 Source->SourceType = AL_STATIC;
                 Source->queue = newlist;
+
+                oldchannels = Source->SourceChannels;
+                Source->SourceChannels = ChannelsFromUserFmt(newlist->buffers[0]->FmtChannels);
+
+                if(oldchannels != Source->SourceChannels)
+                {
+                    if(Source->SourceChannels == 1)
+                        Source->EAXSrcProps.lRoom = EAXSOURCE_DEFAULTROOM;
+                    else if (Source->SourceChannels >= 2)
+                        Source->EAXSrcProps.lRoom = EAXSOURCE_MINROOM;
+
+                    if(Context->Device->EAXIsActive)
+                    {
+                        CalcFilterGainsEAX(Context, Source);
+                        ApplyFilterGainsEAX(Context);
+                        UpdateSourceEAX(Context, Source);
+                    }
+                }
             }
             else
             {
                 /* Source is now Undetermined */
                 Source->SourceType = AL_UNDETERMINED;
                 Source->queue = NULL;
+
+                Source->SourceChannels = AL_NONE;
             }
             UnlockBufferList(device);
 
@@ -1702,6 +1764,9 @@ AL_API ALvoid AL_APIENTRY alGenSources(ALsizei n, ALuint *sources)
             break;
         }
         sources[cur] = source->id;
+
+        if(context->Device->EAXIsActive)
+            GenSourceSendPrimaryEAX(context, source);
     }
 
     ALCcontext_DecRef(context);
@@ -2551,6 +2616,14 @@ AL_API ALvoid AL_APIENTRY alSourcePlayv(ALsizei n, const ALuint *sources)
         source->state = AL_PLAYING;
         source->VoiceIdx = vidx;
 
+        /* If EAX is enabled, compute the EAX Update source. This is computed twice, so it must be rewritten*/
+        if (context->Device->EAXIsActive)
+        {
+            CalcFilterGainsEAX(context, source);
+            ApplyFilterGainsEAX(context);
+            UpdateSourceEAX(context, source);
+        }
+
         SendStateChangeEvent(context, source->id, AL_PLAYING);
     }
     ALCdevice_Unlock(device);
@@ -2716,6 +2789,7 @@ AL_API ALvoid AL_APIENTRY alSourceQueueBuffers(ALuint src, ALsizei nb, const ALu
     ALbufferlistitem *BufferListStart;
     ALbufferlistitem *BufferList;
     ALbuffer *BufferFmt = NULL;
+    ALuint oldchannels;
 
     if(nb == 0)
         return;
@@ -2818,6 +2892,24 @@ AL_API ALvoid AL_APIENTRY alSourceQueueBuffers(ALuint src, ALsizei nb, const ALu
     /* Source is now streaming */
     source->SourceType = AL_STREAMING;
 
+    oldchannels = source->SourceChannels;
+    source->SourceChannels = ChannelsFromUserFmt(BufferListStart->buffers[0]->FmtChannels);
+
+    if(oldchannels != source->SourceChannels)
+    {
+        if(source->SourceChannels == 1)
+            source->EAXSrcProps.lRoom = EAXSOURCE_DEFAULTROOM;
+        else if (source->SourceChannels >= 2)
+            source->EAXSrcProps.lRoom = EAXSOURCE_MINROOM;
+
+        if(context->Device->EAXIsActive)
+        {
+            CalcFilterGainsEAX(context, source);
+            ApplyFilterGainsEAX(context);
+            UpdateSourceEAX(context, source);
+        }
+    }
+
     if(!(BufferList=source->queue))
         source->queue = BufferListStart;
     else
@@ -2842,6 +2934,7 @@ AL_API void AL_APIENTRY alSourceQueueBufferLayersSOFT(ALuint src, ALsizei nb, co
     ALbuffer *BufferFmt = NULL;
     ALsource *source;
     ALsizei i;
+    ALuint oldchannels;
 
     if(nb == 0)
         return;
@@ -2932,6 +3025,24 @@ AL_API void AL_APIENTRY alSourceQueueBufferLayersSOFT(ALuint src, ALsizei nb, co
 
     /* Source is now streaming */
     source->SourceType = AL_STREAMING;
+
+    oldchannels = source->SourceChannels;
+    source->SourceChannels = ChannelsFromUserFmt(BufferListStart->buffers[0]->FmtChannels);
+
+    if(oldchannels != source->SourceChannels)
+    {
+        if(source->SourceChannels == 1)
+            source->EAXSrcProps.lRoom = EAXSOURCE_DEFAULTROOM;
+        else if(source->SourceChannels >= 2)
+            source->EAXSrcProps.lRoom = EAXSOURCE_MINROOM;
+
+        if(context->Device->EAXIsActive)
+        {
+            CalcFilterGainsEAX(context, source);
+            ApplyFilterGainsEAX(context);
+            UpdateSourceEAX(context, source);
+        }
+    }
 
     if(!(BufferList=source->queue))
         source->queue = BufferListStart;
@@ -3045,9 +3156,10 @@ done:
 }
 
 
-static void InitSourceParams(ALsource *Source, ALsizei num_sends)
+static void InitSourceParams(ALsource *Source, ALsizei num_sends, LPGUID list)
 {
     ALsizei i;
+    EAXACTIVEFXSLOTS ActiveSlots = EAXSOURCE_3DDEFAULTACTIVEFXSLOTID;
 
     Source->InnerAngle = 360.0f;
     Source->OuterAngle = 360.0f;
@@ -3080,6 +3192,7 @@ static void InitSourceParams(ALsource *Source, ALsizei num_sends)
     Source->WetGainAuto = AL_TRUE;
     Source->WetGainHFAuto = AL_TRUE;
     Source->AirAbsorptionFactor = 0.0f;
+    Source->AirAbsorptionGainHF = AIRABSORBGAINHF;
     Source->RoomRolloffFactor = 0.0f;
     Source->DopplerFactor = 1.0f;
     Source->HeadRelative = AL_FALSE;
@@ -3109,6 +3222,51 @@ static void InitSourceParams(ALsource *Source, ALsizei num_sends)
         Source->Send[i].GainLF = 1.0f;
         Source->Send[i].LFReference = HIGHPASSFREQREF;
     }
+
+    Source->EAXSrcProps.lDirect =                EAXSOURCE_DEFAULTDIRECT;
+    Source->EAXSrcProps.lDirectHF =              EAXSOURCE_DEFAULTDIRECTHF;
+    Source->EAXSrcProps.lRoom =                  EAXSOURCE_DEFAULTROOM;
+    Source->EAXSrcProps.lRoomHF =                EAXSOURCE_DEFAULTROOMHF;
+    Source->EAXSrcProps.lObstruction =           EAXSOURCE_DEFAULTOBSTRUCTION;
+    Source->EAXSrcProps.flObstructionLFRatio =   EAXSOURCE_DEFAULTOBSTRUCTIONLFRATIO;
+    Source->EAXSrcProps.lOcclusion =             EAXSOURCE_DEFAULTOCCLUSION;
+    Source->EAXSrcProps.flOcclusionLFRatio =     EAXSOURCE_DEFAULTOCCLUSIONLFRATIO;
+    Source->EAXSrcProps.flOcclusionRoomRatio =   EAXSOURCE_DEFAULTOCCLUSIONROOMRATIO;
+    Source->EAXSrcProps.flOcclusionDirectRatio = EAXSOURCE_DEFAULTOCCLUSIONDIRECTRATIO;
+    Source->EAXSrcProps.lExclusion =             EAXSOURCE_DEFAULTEXCLUSION;
+    Source->EAXSrcProps.flExclusionLFRatio =     EAXSOURCE_DEFAULTEXCLUSIONLFRATIO;
+    Source->EAXSrcProps.lOutsideVolumeHF =       EAXSOURCE_DEFAULTOUTSIDEVOLUMEHF;
+    Source->EAXSrcProps.flDopplerFactor =        EAXSOURCE_DEFAULTDOPPLERFACTOR;
+    Source->EAXSrcProps.flRolloffFactor =        EAXSOURCE_DEFAULTROLLOFFFACTOR;
+    Source->EAXSrcProps.flRoomRolloffFactor =    EAXSOURCE_DEFAULTROOMROLLOFFFACTOR;
+    Source->EAXSrcProps.flAirAbsorptionFactor =  EAXSOURCE_DEFAULTAIRABSORPTIONFACTOR;
+    Source->EAXSrcProps.ulFlags =                EAXSOURCE_DEFAULTFLAGS;
+    Source->EAXSrcProps.flMacroFXFactor =        EAXSOURCE_DEFAULTMACROFXFACTOR;
+
+    Source->EAXActiveSlots =                ActiveSlots;
+    Source->EAXSpeakersLevel.lLevel =       EAXSOURCE_DEFAULTSPEAKERLEVEL;
+    Source->EAXSpeakersLevel.lSpeakerID =   EAXSPEAKER_FRONT_CENTER;  //review and analyzing it
+    for (i=0; i<EAX_MAX_FXSLOTS; i++)
+    {
+        Source->EAXSendProps[i].guidReceivingFXSlotID =  list[i];
+        Source->EAXSendProps[i].lSend =                  EAXSOURCE_DEFAULTSEND;
+        Source->EAXSendProps[i].lSendHF =                EAXSOURCE_DEFAULTSENDHF;
+        Source->EAXSendProps[i].lOcclusion =             EAXSOURCE_DEFAULTOCCLUSION;
+        Source->EAXSendProps[i].flOcclusionLFRatio =     EAXSOURCE_DEFAULTOCCLUSIONLFRATIO;
+        Source->EAXSendProps[i].flOcclusionRoomRatio =   EAXSOURCE_DEFAULTOCCLUSIONROOMRATIO;
+        Source->EAXSendProps[i].flOcclusionDirectRatio = EAXSOURCE_DEFAULTOCCLUSIONDIRECTRATIO;
+        Source->EAXSendProps[i].lExclusion =             EAXSOURCE_DEFAULTEXCLUSION;
+        Source->EAXSendProps[i].flExclusionLFRatio =     EAXSOURCE_DEFAULTEXCLUSIONLFRATIO;
+
+        Source->EAXSrcData.ActiveSends[i].SlotIdx = SLOT_NULL;
+        Source->EAXSrcData.ActiveSends[i].Primary = AL_FALSE;
+        Source->EAXSrcData.ActiveSends[i].Enviroment = AL_TRUE;
+        Source->EAXSrcData.ActiveSends[i].Upmix = AL_TRUE;
+    }
+    Source->EAXSrcData.ActiveSends[1].SlotIdx = SLOT_0;
+    Source->EAXSrcData.ActiveSends[1].Primary = AL_TRUE;
+
+    Source->SourceChannels = AL_NONE;
 
     Source->Offset = 0.0;
     Source->OffsetType = AL_NONE;
@@ -3210,6 +3368,7 @@ static void UpdateSourceProps(ALsource *source, ALvoice *voice, ALsizei num_send
     props->OuterGainHF = source->OuterGainHF;
 
     props->AirAbsorptionFactor = source->AirAbsorptionFactor;
+    props->AirAbsorptionGainHF = source->AirAbsorptionGainHF;
     props->RoomRolloffFactor = source->RoomRolloffFactor;
     props->DopplerFactor = source->DopplerFactor;
 
@@ -3259,6 +3418,383 @@ void UpdateAllSourceProps(ALCcontext *context)
     }
 }
 
+static ALboolean GenSourceSendPrimaryEAX(ALCcontext *Context, ALsource *Source)
+{
+    ALeffectslot *slot   = NULL;
+    ALCdevice    *device = Context->Device;
+    ALint         idx    = Context->Device->EAXhw.PrimaryIdx;
+    ALuint        value;
+
+    value = (idx != SLOT_NULL) ? device->EAXhw.Slots[idx].Idx : AL_EFFECTSLOT_NULL;
+
+    LockEffectSlotList(Context);
+    if(!(value == AL_EFFECTSLOT_NULL || (slot = LookupEffectSlot(Context, value)) != NULL))
+    {
+        UnlockEffectSlotList(Context);
+        SETERR_RETURN(Context, AL_INVALID_VALUE, AL_FALSE, "Invalid effect ID %u", value);
+    }
+
+    if(slot != Source->Send[SEND_1].Slot)
+    {
+        //ALvoice *voice;
+        /* Add refcount on the new slot, and release the previous slot */
+        if(slot) IncrementRef(&slot->ref);
+        if(Source->Send[SEND_1].Slot)
+            DecrementRef(&Source->Send[SEND_1].Slot->ref);
+        Source->Send[SEND_1].Slot = slot;
+    }
+    UnlockEffectSlotList(Context);
+
+    return AL_TRUE;
+}
+
+ALenum ApplyFilterGainsEAX(ALCcontext *context)
+{
+    EAXFILTERS *filter;
+    ALsizei i;
+
+    filter = &context->Device->EAXhw.Filters;
+
+    /* Assign the EFX filter ID to the structure data passed by the function parameter.
+       Limit de value to 0 dB acc. to EAX 4.0 programmer guide, pag. 59 */
+    filter->Direct.Gain = minf(filter->Direct.Gain, EAX_DEFAULT_GAIN);
+
+    if(filter->Direct.Idx)
+    {
+        alFilterf(filter->Direct.Idx, AL_LOWPASS_GAIN, mB_to_gain(filter->Direct.Gain));
+        alFilterf(filter->Direct.Idx, AL_LOWPASS_GAINHF, mB_to_gain(filter->Direct.GainHF));
+    }
+
+    for(i=0; i<EAX_MAX_FXSLOTS; i++)
+    {
+        /* Assign the EFX filter ID to the structure data passed by the function parameter.
+           Limit de value to 0 dB acc. to EAX 4.0 programmer guide, pag. 60 */
+        filter->Send[i].Gain = minf(filter->Send[i].Gain, EAX_DEFAULT_GAIN);
+
+        if (filter->Send[i].Idx)
+        {
+            alFilterf(filter->Send[i].Idx, AL_LOWPASS_GAIN, mB_to_gain(filter->Send[i].Gain));
+            alFilterf(filter->Send[i].Idx, AL_LOWPASS_GAINHF, mB_to_gain(filter->Send[i].GainHF));
+        }
+     }
+    return AL_NO_ERROR;
+}
+
+/* CalcFilterGainsEAX function. Computes de gains values of the
+   direct and sends filters. */
+ALenum CalcFilterGainsEAX(ALCcontext *context, ALsource *source)
+{
+    EAXSOURCEPROPERTIES *props;
+    EAXFILTERGAINS EAXGains[EAX_MAX_FXSLOTS] = {EAX_DEFAULT_GAIN}; //Reset all gains to 0 dB
+    EAXFILTERS    *filter;
+    ALuint         MaxSends;
+    ALCdevice     *device;
+    ALuint i;
+
+    device   =  context->Device;
+    props    = &source->EAXSrcProps;
+    MaxSends =  device->EAXSession.ulMaxActiveSends;
+    filter   = &device->EAXhw.Filters;
+
+    for (i=0; i<EAX_MAX_FXSLOTS; i++)
+    {
+        EAXSOURCEALLSENDPROPERTIES *send;
+        EAXFXSLOTPROPERTIES        *FXSlot;
+
+        /* Load pointers */
+        send   = &source->EAXSendProps[i];
+        FXSlot = &device->EAXSlotProps[i];
+
+        /* EAX Send, SendHF, Unconditional */
+        EAXGains[i].Send    = (ALfloat)send->lSend;
+        EAXGains[i].SendHF  = (ALfloat)send->lSendHF;
+
+        /*EAX FXSlot Occlusion, Occlusion HF ratio, Unconditional */
+        EAXGains[i].Send   += FXSlot->flOcclusionLFRatio*FXSlot->lOcclusion;
+        EAXGains[i].SendHF += (ALfloat)FXSlot->lOcclusion;
+
+        if (FXSlot->ulFlags & EAXFXSLOTFLAGS_ENVIRONMENT)
+        {
+            /* EAX >=4 Send Occlusion */
+            EAXGains[i].Direct   = maxf(send->flOcclusionLFRatio + send->flOcclusionDirectRatio - 1.0f,
+                                        send->flOcclusionLFRatio*send->flOcclusionDirectRatio) * 
+                                        send->lOcclusion;
+
+            EAXGains[i].DirectHF = send->lOcclusion*send->flOcclusionDirectRatio;
+
+            EAXGains[i].Send    += maxf(send->flOcclusionLFRatio + send->flOcclusionRoomRatio - 1.0f,
+                                        send->flOcclusionLFRatio*send->flOcclusionRoomRatio) * 
+                                        send->lOcclusion;
+
+            EAXGains[i].SendHF  += send->lOcclusion*send->flOcclusionRoomRatio;
+
+            /* EAX >=4 Send Exclusion, the previous results are added */
+            EAXGains[i].Send    += send->lExclusion*send->flExclusionLFRatio;
+            EAXGains[i].SendHF  += (ALfloat)send->lExclusion;
+
+            /* EAX Room, RoomHF, Unconditional under ENVIRONMENT active flag */
+            EAXGains[i].Send    += (ALfloat)props->lRoom;
+            EAXGains[i].SendHF  += (ALfloat)props->lRoomHF;
+        }
+
+        /* Mute all sends of the data-out filter*/
+        filter->Send[i].Gain   = EAX_MIN_GAIN;
+        filter->Send[i].GainHF = EAX_MIN_GAIN;
+    }
+
+    /* EAX Direct path, Unconditional */
+    filter->Direct.Gain    = (ALfloat)props->lDirect;
+    filter->Direct.GainHF  = (ALfloat)props->lDirectHF;
+
+    /* EAX general Obstruction, Unconditional */
+    filter->Direct.Gain   += props->lObstruction*props->flObstructionLFRatio;
+    filter->Direct.GainHF += (ALfloat)props->lObstruction;
+
+    for (i=0; i<MaxSends; i++)
+    {
+        ALboolean Primary;
+        ALuint    Idx;
+
+        Primary = source->EAXSrcData.ActiveSends[i].Primary;
+        Idx     = source->EAXSrcData.ActiveSends[i].SlotIdx;
+
+        if (Idx == SLOT_NULL) continue;
+
+        if ((device->EAXSlotProps[Idx].ulFlags & EAXFXSLOTFLAGS_ENVIRONMENT) && Primary)
+        {
+            /* EAX <= 3.0 occlusion */
+            filter->Direct.Gain    += maxf(props->flOcclusionLFRatio + props->flOcclusionDirectRatio - 1.0f,
+                                           props->flOcclusionLFRatio*props->flOcclusionDirectRatio) * 
+                                           props->lOcclusion + EAXGains[Idx].Direct;
+
+            filter->Direct.GainHF  += props->lOcclusion*props->flOcclusionDirectRatio + EAXGains[Idx].DirectHF;
+
+            filter->Send[i].Gain    = maxf(props->flOcclusionLFRatio + props->flOcclusionRoomRatio - 1.0f,
+                                           props->flOcclusionLFRatio*props->flOcclusionRoomRatio) * 
+                                           props->lOcclusion + EAXGains[Idx].Send;
+
+            filter->Send[i].GainHF  = props->lOcclusion*props->flOcclusionRoomRatio + EAXGains[Idx].SendHF;
+
+            /* EAX <= 3.0 exclusion */
+            filter->Send[i].Gain   += props->lExclusion*props->flExclusionLFRatio;
+            filter->Send[i].GainHF += (ALfloat)props->lExclusion;
+        }
+        else
+        {
+            /* Done, All sends was processed */
+            filter->Send[i].Gain   = EAXGains[Idx].Send;
+            filter->Send[i].GainHF = EAXGains[Idx].SendHF;
+        }
+    }
+
+    return AL_NO_ERROR;
+}
+
+void UpdateSourceEAX(ALCcontext *Context, ALsource *Source)
+{
+    ALCdevice    *device  = Context->Device;
+    ALfilter     *direct_filter = NULL;
+    ALfilter     *send_filter[EAX_MAX_FXSLOTS] = {NULL};
+    ALeffectslot *slot[EAX_MAX_FXSLOTS] = {NULL};
+    ALvoice      *voice;
+    ALboolean     update;
+    ALuint        idx;
+    ALuint        i;
+    ALfloat       AirAbsHF;
+    ALfloat       HFRef;
+    ALuint        NumSends;
+    ALuint        NumSlots;
+
+    update   = AL_FALSE;
+    AirAbsHF = Context->EAXCxtProps.flAirAbsorptionHF;
+    HFRef    = Context->EAXCxtProps.flHFReference;
+    NumSends = device->EAXSession.ulMaxActiveSends;
+    NumSlots = (device->EAXhw.MultiSlot) ? EAX_MAX_FXSLOTS : EAX_MIN_FXSLOTS;
+
+    LockEffectSlotList(Context);
+
+    for (i=0; i<NumSlots; i++)
+    {
+        idx = device->EAXhw.Slots[i].Idx;
+
+        if(!(idx == AL_EFFECTSLOT_NULL || (slot[i]=LookupEffectSlot(Context, idx)) != NULL))
+        {
+            UnlockEffectSlotList(Context);
+            SETERR_RETURN(Context, AL_INVALID_VALUE, AL_FALSE, "Invalid effect slot ID %u", idx);
+        }
+    }
+
+    LockFilterList(device);
+
+    idx = device->EAXhw.Filters.Direct.Idx;
+
+    if(!(idx == AL_FILTER_NULL || (direct_filter=LookupFilter(device, idx)) != NULL))
+    {
+        UnlockFilterList(device);
+        UnlockEffectSlotList(Context);
+        SETERR_RETURN(Context, AL_INVALID_VALUE, AL_FALSE, "Invalid direct filter ID %u", idx);
+    }
+
+    for (i=0; i<NumSends; i++)
+    {
+        idx = device->EAXhw.Filters.Send[i].Idx;
+
+        if(!((ALuint)i < NumSends))
+        {
+            UnlockFilterList(device);
+            UnlockEffectSlotList(Context);
+            SETERR_RETURN(Context, AL_INVALID_VALUE, AL_FALSE, "Invalid send %u", i);
+        }
+        if(!(idx == AL_FILTER_NULL || (send_filter[i]=LookupFilter(device, idx)) != NULL))
+        {
+            UnlockFilterList(device);
+            UnlockEffectSlotList(Context);
+            SETERR_RETURN(Context, AL_INVALID_VALUE, AL_FALSE, "Invalid send filter ID %u", idx);
+        }
+    }
+
+    for(i=0; i<EAX_MAX_FXSLOTS; i++)
+        if (Source->EAXSrcData.ActiveSends[i].Primary)
+            Source->EAXSrcData.ActiveSends[i].SlotIdx = Context->Device->EAXhw.PrimaryIdx;
+
+    /* ApplyAttnSourceParams */
+    Source->DryGainHFAuto = (Source->EAXSrcProps.ulFlags & EAXSOURCEFLAGS_DIRECTHFAUTO) ? AL_TRUE : AL_FALSE;
+    Source->WetGainAuto   = (Source->EAXSrcProps.ulFlags & EAXSOURCEFLAGS_ROOMAUTO) ? AL_TRUE : AL_FALSE;
+    Source->WetGainHFAuto = (Source->EAXSrcProps.ulFlags & EAXSOURCEFLAGS_ROOMHFAUTO) ? AL_TRUE : AL_FALSE;
+   /* REVIEW EAX 4.0 */
+    Source->OuterGainHF         = mB_to_gain((ALfloat)Source->EAXSrcProps.lOutsideVolumeHF);
+    Source->DopplerFactor       = Source->EAXSrcProps.flDopplerFactor;
+    Source->RolloffFactor       = /*AL_ROLLOFF_DEFAULT_FACTOR*/1.0f + Source->EAXSrcProps.flRolloffFactor;
+    Source->RoomRolloffFactor   = Source->EAXSrcProps.flRoomRolloffFactor;
+    Source->AirAbsorptionFactor = Source->EAXSrcProps.flAirAbsorptionFactor;
+    /* REVIEW EAX 5.0 */
+    if(device->EAXManager.Target == EAX50_TARGET)
+        Source->Spatialize = (Source->EAXSrcProps.ulFlags & EAXSOURCEFLAGS_UPMIX) ? AL_TRUE : AL_AUTO_SOFT;
+
+    if(!direct_filter)
+    {
+        /* Disable filter */
+        Source->Direct.Gain = 1.0f;
+        Source->Direct.GainHF = 1.0f;
+        Source->Direct.HFReference = LOWPASSFREQREF;
+        Source->Direct.GainLF = 1.0f;
+        Source->Direct.LFReference = HIGHPASSFREQREF;
+    }
+    else
+    {
+        Source->Direct.Gain = direct_filter->Gain;
+        Source->Direct.GainHF = direct_filter->GainHF;
+        Source->Direct.HFReference = direct_filter->HFReference;
+        Source->Direct.GainLF = direct_filter->GainLF;
+        Source->Direct.LFReference = direct_filter->LFReference;
+    }
+
+    for(i=0; i<NumSends; i++)
+    {
+        ALeffectslot *slot_final;
+        ALfilter *send_filter_final;
+        ALboolean IsEnvironment;
+        ALboolean IsReverb;
+        ALboolean IsHFRef;
+        ALint     primary;
+
+        primary = device->EAXhw.PrimaryIdx;
+        IsHFRef = AL_TRUE;
+
+        if (Source->EAXSrcData.ActiveSends[i].SlotIdx == SLOT_NULL)
+        {
+            slot_final        = NULL;
+            send_filter_final = NULL;
+        }
+        else
+        {
+            if(Source->EAXSrcData.ActiveSends[i].Primary)
+            {
+
+                IsEnvironment = device->EAXSlotProps[primary].ulFlags &
+                                EAXFXSLOTFLAGS_ENVIRONMENT;
+                IsReverb      = device->EAXhw.Slots[primary].EffType == _EAX_REVERB_EFFECT ?
+                                AL_TRUE : AL_FALSE;
+
+                if(IsEnvironment && IsReverb)
+                {
+                    AirAbsHF = device->EAXEffectProps[primary].EAXReverb.flAirAbsorptionHF;
+                    IsHFRef  = AL_FALSE;
+                }
+            }
+            idx = Source->EAXSrcData.ActiveSends[i].SlotIdx;
+            slot_final        = slot[idx];
+            send_filter_final = send_filter[i];
+        }
+
+        if(!send_filter_final)
+        {
+            /* Disable filter */
+            Source->Send[i].Gain = 1.0f;
+            Source->Send[i].GainHF = 1.0f;
+            Source->Send[i].HFReference = LOWPASSFREQREF;
+            Source->Send[i].GainLF = 1.0f;
+            Source->Send[i].LFReference = HIGHPASSFREQREF;
+        }
+        else
+        {
+            Source->Send[i].Gain = send_filter_final->Gain;
+            Source->Send[i].GainHF = send_filter_final->GainHF;
+            Source->Send[i].HFReference = IsHFRef ? HFRef : send_filter_final->HFReference;
+            Source->Send[i].GainLF = send_filter_final->GainLF;
+            Source->Send[i].LFReference = send_filter_final->LFReference;
+        }
+
+        if (slot_final != Source->Send[i].Slot && IsPlayingOrPaused(Source))
+        {
+            /* We must force an update if the auxiliary slot changed on an
+             * active source, in case the slot is about to be deleted.
+             */
+            update = AL_TRUE;
+        }
+        /* Add refcount on the new slot, and release the previous slot */
+        if(slot_final) IncrementRef(&slot_final->ref);
+        if(Source->Send[i].Slot)
+            DecrementRef(&Source->Send[i].Slot->ref);
+        Source->Send[i].Slot = slot_final;
+    }
+
+    Source->AirAbsorptionGainHF = clampf(mB_to_gain(AirAbsHF), AIRABSORBGAINHFMIN, AIRABSORBGAINHFMAX);
+   
+    voice = GetSourceVoice(Source, Context);
+    if(voice != NULL && (update || SourceShouldUpdate(Source, Context)))
+        UpdateSourceProps(Source, voice, device->NumAuxSends, Context);
+    else
+        ATOMIC_FLAG_CLEAR(&Source->PropsClean, almemory_order_release);
+
+    UnlockFilterList(device);
+    UnlockEffectSlotList(Context);
+}
+
+void UpdateAllSourcesEAX(ALCcontext *context)
+{
+    SourceSubList *sublist, *subend;
+
+    almtx_lock(&context->SourceLock);
+    sublist = VECTOR_BEGIN(context->SourceList);
+    subend = VECTOR_END(context->SourceList);
+    for(;sublist != subend;++sublist)
+    {
+        ALuint64 usemask = ~sublist->FreeMask;
+        while(usemask)
+        {
+            ALsizei idx = CTZ64(usemask);
+            ALsource *source = sublist->Sources + idx;
+
+            usemask &= ~(U64(1) << idx);
+
+            CalcFilterGainsEAX(context, source);
+            ApplyFilterGainsEAX(context);
+            UpdateSourceEAX(context, source);
+        }
+    }
+    almtx_unlock(&context->SourceLock);
+}
 
 /* GetSourceSampleOffset
  *
@@ -3647,7 +4183,7 @@ static ALsource *AllocSource(ALCcontext *context)
     }
 
     memset(source, 0, sizeof(*source));
-    InitSourceParams(source, device->NumAuxSends);
+    InitSourceParams(source, device->NumAuxSends, device->EAXManager.TargetSlots);
 
     /* Add 1 to avoid source ID 0. */
     source->id = ((lidx<<6) | slidx) + 1;

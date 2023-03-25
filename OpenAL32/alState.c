@@ -351,6 +351,14 @@ AL_API ALint AL_APIENTRY alGetInteger(ALenum pname)
         value = ResamplerDefault;
         break;
 
+    case AL_EAX_RAM_SIZE:
+        value = (ALint)EAX_ONBOARD_RAM_SIZE;
+        break;
+
+    case AL_EAX_RAM_FREE:
+        value = (ALint)EAX_ONBOARD_RAM_FREE;
+        break;
+
     default:
         alSetError(context, AL_INVALID_VALUE, "Invalid integer property 0x%04x", pname);
     }
