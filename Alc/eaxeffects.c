@@ -857,7 +857,7 @@ ALenum CopyDefPropsEffectEAX(EAXEFFECTPROPS *props, ALenum EffType)
             break;
     }
 
-    return AL_NO_ERROR; //Revisar si es necesario
+    return AL_NO_ERROR; //Review if needed
 }
 
 /* ApplyReverbParamsEAX function */
